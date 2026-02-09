@@ -1,119 +1,217 @@
 # Chapter 4: Exponentials and Logarithms
 
-## Intuition
+Softmax, cross-entropy loss, learning rate decay, sigmoid activation — they all use exp() and log(). These two functions are everywhere in ML because they convert between additive and multiplicative worlds. Master them, and half of ML's formulas suddenly make sense.
 
-Exponentials and logarithms are inverse operations, like multiplication and division. The exponential $b^x$ asks "what do I get when I multiply $b$ by itself $x$ times?" The logarithm $\log_b(y)$ asks the reverse: "how many times must I multiply $b$ by itself to get $y$?"
+---
 
-**Real-world analogy**: Consider compound interest. If you invest $100 at 10% annual interest, after $n$ years you have $100 \times 1.1^n$. That's exponential growth. Now flip the question: "How many years until my money doubles?" That's a logarithm problem: $\log_{1.1}(2) \approx 7.27$ years.
+**Building On** — Polynomials give you curves. But some growth is faster than any polynomial — exponential growth. And its inverse, the logarithm, is the single most important function in information theory and ML.
 
-**Why this matters for ML**: These functions are the backbone of modern machine learning:
-- **Softmax** uses exponentials to convert raw scores to probabilities
-- **Cross-entropy loss** uses logarithms to measure prediction errors
-- **Learning rate decay** often follows exponential schedules
-- **Information theory** (entropy, KL divergence) is built on logarithms
-- **Probability distributions** (normal, exponential) use $e^x$ extensively
-- **Gradient flow** in deep networks relies on exponential/log properties
+---
 
-## Visual Explanation
+## The ML Problem: Why Does Cross-Entropy Use log()?
 
-### Exponential Growth vs Decay
+Here is your running example for this chapter. Cross-entropy loss is the standard loss function for classification:
 
-```mermaid
-graph TD
-    subgraph "Exponential Functions"
-        A["y = 2^x (growth)"] --> A1["Doubles with each unit increase"]
-        B["y = 0.5^x (decay)"] --> B1["Halves with each unit increase"]
-        C["y = e^x (natural)"] --> C1["Special: derivative equals itself"]
-    end
+$$L = -\sum_i y_i \log(\hat{y}_i)$$
+
+Why the log? Imagine you are training a model on 10,000 data points. Maximum likelihood says: find parameters that maximize the product of all predicted probabilities:
+
+$$P(data|\theta) = \hat{y}_1 \times \hat{y}_2 \times \cdots \times \hat{y}_{10000}$$
+
+Each $\hat{y}_i$ is a probability between 0 and 1. Multiply 10,000 of them together and you get a number so astronomically small that your float64 rounds it to zero. Training is dead.
+
+But take the log of both sides:
+
+$$\log P(data|\theta) = \log(\hat{y}_1) + \log(\hat{y}_2) + \cdots + \log(\hat{y}_{10000})$$
+
+The product becomes a sum. No underflow. Gradients flow cleanly. That single property — **log turns products into sums** — is the reason log appears in almost every ML loss function.
+
+Negate it (because we minimize loss, not maximize likelihood), and you get cross-entropy:
+
+$$L = -\sum_i y_i \log(\hat{y}_i)$$
+
+Keep this example in your head. Every rule you learn in this chapter connects back to it.
+
+---
+
+## You Already Know This
+
+You have used exponentials and logarithms your entire career. You just did not call them that.
+
+**Exponentials = compound growth.** Ever calculated compound interest? `balance = principal * (1 + rate)^years` — that is an exponential function. Exponential backoff in your retry logic? `wait_time = base_delay * 2^attempt` — same thing.
+
+**Logarithms = "how many doublings?"** When you say "binary search is O(log n)," you are answering: "how many times do I halve n before I reach 1?" That is exactly what $\log_2(n)$ computes. When you say "merge sort is O(n log n)," the log is counting recursion depth.
+
+**log(a * b) = log(a) + log(b)** — this is why we use log-probabilities in ML. Multiplying thousands of tiny probabilities causes underflow. Adding their logs does not. You saw this in the cross-entropy example above.
+
+**Softmax** — your neural network outputs raw scores (logits). Softmax applies exp() to each one, then normalizes. The result: valid probabilities that sum to 1. The exp() ensures everything is positive and amplifies differences between scores.
+
+```
+SWE Concept               →  Math Equivalent
+─────────────────────────────────────────────────────
+Compound interest          →  Exponential growth: N(t) = N₀ · (1+r)^t
+Exponential backoff        →  Powers of 2: delay = base · 2^attempt
+O(log n) complexity        →  Logarithm: "how many halvings?"
+Log-probabilities          →  log(a·b) = log(a) + log(b)
+Softmax layer              →  exp(zᵢ) / Σ exp(zⱼ)
 ```
 
-### Exponential and Logarithm as Inverses
+---
 
-$$2^3 = 8 \iff \log_2(8) = 3$$
+## What Are Exponentials and Logarithms?
 
-```mermaid
-graph LR
-    subgraph "Inverse Relationship"
-        A["Exponential<br/>2³ = 8"] <--> B["Logarithm<br/>log₂(8) = 3"]
-    end
+They are inverses of each other, like multiplication and division.
 
-    subgraph "Reading It"
-        C["'2 to the power 3<br/>equals 8'"] <--> D["'log base 2 of 8<br/>equals 3'"]
-    end
+The **exponential** $b^x$ asks: "what do I get when I multiply $b$ by itself $x$ times?"
+
+The **logarithm** $\log_b(y)$ asks the reverse: "how many times must I multiply $b$ by itself to get $y$?"
+
+$$2^3 = 8 \quad \iff \quad \log_2(8) = 3$$
+
+Read it both ways: "2 to the power 3 is 8" and "log base 2 of 8 is 3."
+
+```
+  Exponential: base^exponent = result
+                 2^3         = 8
+
+  Logarithm:   log_base(result) = exponent
+                log_2(8)         = 3
+
+  They undo each other:
+    log_2(2^x) = x       (log undoes exp)
+    2^(log_2(x)) = x     (exp undoes log)
 ```
 
-### The Special Number e
+---
 
-$$e = \lim_{n \to \infty} \left(1 + \frac{1}{n}\right)^n \approx 2.71828...$$
+## The Exponential Function
 
-```mermaid
-graph TD
-    subgraph "Why e is Special"
-        A["e ≈ 2.71828..."]
-        A --> B["Natural base for calculus"]
-        A --> C["d/dx(eˣ) = eˣ"]
-        A --> D["ln(e) = 1"]
-        A --> E["Appears in continuous growth"]
-    end
-```
-
-## Mathematical Foundation
-
-### Exponential Functions
-
-An **exponential function** has the form:
+An exponential function has the form:
 
 $$f(x) = b^x$$
 
 where $b > 0$ and $b \neq 1$ (the **base**).
 
-**Key properties**:
-- Domain: all real numbers
-- Range: positive real numbers only ($b^x > 0$ always)
+**Key properties:**
+- Domain: all real numbers ($x$ can be anything)
+- Range: positive real numbers only ($b^x > 0$ always — this is why softmax outputs are always positive)
 - $b^0 = 1$ for any valid base
 - $b^1 = b$
 
-### Laws of Exponents
+### Exponential Growth vs. Decay
 
-These rules are essential for simplifying expressions:
+When the base is greater than 1, you get **growth**. When between 0 and 1, you get **decay**.
 
-| Law | Formula | Example |
-|-----|---------|---------|
-| Product | $b^m \cdot b^n = b^{m+n}$ | $2^3 \cdot 2^4 = 2^7 = 128$ |
-| Quotient | $\frac{b^m}{b^n} = b^{m-n}$ | $\frac{3^5}{3^2} = 3^3 = 27$ |
-| Power | $(b^m)^n = b^{mn}$ | $(2^3)^2 = 2^6 = 64$ |
-| Zero | $b^0 = 1$ | $5^0 = 1$ |
-| Negative | $b^{-n} = \frac{1}{b^n}$ | $2^{-3} = \frac{1}{8}$ |
-| Fractional | $b^{1/n} = \sqrt[n]{b}$ | $8^{1/3} = 2$ |
-| Distribution | $(ab)^n = a^n b^n$ | $(2 \cdot 3)^2 = 4 \cdot 9 = 36$ |
+```
+  y                          y = 2^x (growth)
+  |                        .
+  |                      .
+  |                   .
+  |                .
+  |            .
+  |        .
+  |     .
+  |  .  .  .  .  .  .       y = (0.5)^x (decay)
+  | .                  .  .  .  .
+  +─────────────────────────── x
+        Both pass through (0, 1)
+```
 
-### The Natural Exponential: e
+**Growth** ($b > 1$): Doubles, triples, ... with each unit of $x$. Think: viral spread, unchecked model parameter growth.
 
-The number $e \approx 2.71828...$ is the base of the **natural exponential**:
+**Decay** ($0 < b < 1$): Halves, thirds, ... with each unit of $x$. Think: learning rate decay, radioactive decay, exponential moving average weight on old data.
 
-$$f(x) = e^x$$
+---
 
-**Why $e$ is special**:
-1. The derivative of $e^x$ is itself: $\frac{d}{dx}e^x = e^x$
-2. It arises naturally in continuous growth/decay
-3. It simplifies calculus enormously
+## The Special Number e
 
-### Logarithms
+$$e = \lim_{n \to \infty} \left(1 + \frac{1}{n}\right)^n \approx 2.71828...$$
 
-The **logarithm** base $b$ of $x$ is the exponent needed to produce $x$:
+You will see $e$ everywhere. Why is this particular number the default base in ML and calculus?
 
-$$\log_b(x) = y \iff b^y = x$$
+**Because the derivative of $e^x$ is itself: $\frac{d}{dx}e^x = e^x$.**
 
-**Common bases**:
-- $\log_{10}(x)$: Common logarithm (log)
-- $\log_e(x) = \ln(x)$: Natural logarithm
-- $\log_2(x)$: Binary logarithm (used in CS/information theory)
+No other base has this property. This makes calculus with $e^x$ clean — no extra constants floating around. When you see `np.exp()` in ML code, it is computing $e^x$.
 
-### Logarithmic Identities
+Other reasons $e$ matters:
+- It arises naturally from continuous compounding (compounding interest infinitely often)
+- The natural logarithm $\ln(x) = \log_e(x)$ has derivative $1/x$ — the simplest possible
+- The normal distribution, softmax, sigmoid — all built on $e^x$
+
+---
+
+## Laws of Exponents
+
+These rules let you simplify exponential expressions. You will use them constantly when manipulating ML formulas.
+
+| Law | Formula | Example | Why You Care |
+|-----|---------|---------|-------------|
+| Product | $b^m \cdot b^n = b^{m+n}$ | $2^3 \cdot 2^4 = 2^7 = 128$ | Combining exponential terms |
+| Quotient | $\frac{b^m}{b^n} = b^{m-n}$ | $\frac{3^5}{3^2} = 3^3 = 27$ | Simplifying ratios |
+| Power | $(b^m)^n = b^{mn}$ | $(2^3)^2 = 2^6 = 64$ | Nested exponentials |
+| Zero | $b^0 = 1$ | $5^0 = 1$ | Base case |
+| Negative | $b^{-n} = \frac{1}{b^n}$ | $2^{-3} = \frac{1}{8}$ | Flipping growth to decay |
+| Fractional | $b^{1/n} = \sqrt[n]{b}$ | $8^{1/3} = 2$ | Roots as exponents |
+| Distribution | $(ab)^n = a^n b^n$ | $(2 \cdot 3)^2 = 4 \cdot 9 = 36$ | Distributing over products |
+
+**Quick exercise** — Simplify $\frac{e^{3x} \cdot e^{2x}}{e^{x}}$ using these rules:
+
+$$\frac{e^{3x} \cdot e^{2x}}{e^{x}} = \frac{e^{3x+2x}}{e^x} = \frac{e^{5x}}{e^x} = e^{5x-x} = e^{4x}$$
+
+Product rule, then quotient rule. That is all there is to it.
+
+---
+
+## Logarithms
+
+The **logarithm** base $b$ of $x$ is the exponent you need:
+
+$$\log_b(x) = y \quad \iff \quad b^y = x$$
+
+Think of it as asking: "$b$ to WHAT POWER gives me $x$?"
+
+### Common Bases
+
+| Notation | Name | Used In |
+|----------|------|---------|
+| $\log_{10}(x)$ | Common logarithm | Order-of-magnitude estimation |
+| $\ln(x) = \log_e(x)$ | Natural logarithm | Calculus, ML (this is `np.log()`) |
+| $\log_2(x)$ | Binary logarithm | CS complexity, information theory (bits) |
+
+**Heads up on notation:** In pure math, $\log$ usually means $\ln$ (natural log). In CS, $\log$ often means $\log_2$. In ML papers, $\log$ almost always means $\ln$. When in doubt, check the context or be explicit.
+
+### The Logarithm Curve
+
+```
+  y
+  |
+  3|            .  .  .  .  .  .  .   y = log₂(x)
+  |         .
+  2|      .
+  |    .
+  1|  .
+  |.
+  +──────────────────────────────── x
+  |1  2     4        8           16
+ -1| (log is negative for x < 1)
+  |
+```
+
+Key visual properties:
+- Passes through (1, 0) — because $\log_b(1) = 0$ for any base
+- Passes through (b, 1) — because $\log_b(b) = 1$
+- Grows slowly — logarithm is the "opposite" of exponential explosion
+- Undefined for $x \leq 0$ — you cannot take $\log$ of zero or negative numbers
+
+---
+
+## Logarithmic Identities
+
+These are the rules that make logarithms so powerful. The first one is the most important rule in all of ML mathematics.
 
 | Identity | Formula | Example |
 |----------|---------|---------|
-| Product | $\log_b(xy) = \log_b(x) + \log_b(y)$ | $\log_2(8 \cdot 4) = 3 + 2 = 5$ |
+| **Product** | $\log_b(xy) = \log_b(x) + \log_b(y)$ | $\log_2(8 \cdot 4) = 3 + 2 = 5$ |
 | Quotient | $\log_b(x/y) = \log_b(x) - \log_b(y)$ | $\log_{10}(100/10) = 2 - 1 = 1$ |
 | Power | $\log_b(x^n) = n \cdot \log_b(x)$ | $\ln(e^5) = 5 \cdot \ln(e) = 5$ |
 | Identity | $\log_b(b) = 1$ | $\log_2(2) = 1$ |
@@ -121,42 +219,130 @@ $$\log_b(x) = y \iff b^y = x$$
 | Inverse | $b^{\log_b(x)} = x$ | $e^{\ln(5)} = 5$ |
 | Inverse | $\log_b(b^x) = x$ | $\log_{10}(10^3) = 3$ |
 
+### The Product Rule Is Everything
+
+Go back to our running example. You had a product of 10,000 probabilities:
+
+$$P = \hat{y}_1 \times \hat{y}_2 \times \cdots \times \hat{y}_{10000}$$
+
+Apply the product rule:
+
+$$\log(P) = \log(\hat{y}_1) + \log(\hat{y}_2) + \cdots + \log(\hat{y}_{10000})$$
+
+Product becomes sum. That is the product rule doing all the heavy lifting. Every time you see `log` in an ML loss function, this rule is the reason it is there.
+
 ### Change of Base Formula
 
-Convert between logarithm bases:
+You can convert between any two logarithm bases:
 
 $$\log_b(x) = \frac{\log_c(x)}{\log_c(b)} = \frac{\ln(x)}{\ln(b)}$$
 
-**Example**: Calculate $\log_2(10)$
+**Example**: What is $\log_2(10)$?
 
 $$\log_2(10) = \frac{\ln(10)}{\ln(2)} = \frac{2.303}{0.693} \approx 3.322$$
 
-### Exponential Growth and Decay
+This tells you: you need about 3.32 doublings to reach 10. Or equivalently: binary search on 10 items takes about 3.32 comparisons (round up to 4).
 
-**Growth**: $N(t) = N_0 e^{kt}$ where $k > 0$
-**Decay**: $N(t) = N_0 e^{-kt}$ where $k > 0$
+---
 
-The constant $k$ is the **rate constant**. The time to double (growth) or halve (decay):
+## Exponential Growth and Decay
 
-$$t_{1/2} = \frac{\ln(2)}{k}$$
+The general model:
 
-## Code Example
+$$N(t) = N_0 \cdot e^{kt}$$
+
+- $N_0$: initial value
+- $k > 0$: growth (population, viral spread, unbounded gradient norms)
+- $k < 0$: decay (learning rate schedules, weight decay, radioactive decay)
+
+**Half-life / doubling time:**
+
+$$t_{1/2} = \frac{\ln(2)}{|k|}$$
+
+This formula falls straight out of the log rules. Set $N(t) = 2N_0$, take log of both sides, solve for $t$.
+
+---
+
+## Softmax: Exponentials in Action
+
+Here is where exponentials shine in ML. Your neural network outputs raw scores (logits) like $[2.0, 1.0, 0.1]$. These are not probabilities — they can be negative, they do not sum to 1. Softmax fixes that:
+
+$$\text{softmax}(z_i) = \frac{e^{z_i}}{\sum_j e^{z_j}}$$
+
+```
+Softmax Transformation
+═══════════════════════════════════════════════════
+
+  Logits (raw scores)         Probabilities
+  ┌──────────────────┐        ┌──────────────────┐
+  │ z₁ = 2.0        │──exp──▶│ e^2.0 = 7.389    │
+  │ z₂ = 1.0        │──exp──▶│ e^1.0 = 2.718    │
+  │ z₃ = 0.1        │──exp──▶│ e^0.1 = 1.105    │
+  └──────────────────┘        └──────────────────┘
+                                   │ divide by sum
+                                   │ (7.389 + 2.718 + 1.105 = 11.212)
+                                   ▼
+                              ┌──────────────────┐
+                              │ p₁ = 0.659       │
+                              │ p₂ = 0.242       │
+                              │ p₃ = 0.099       │
+                              │ ─────────        │
+                              │ sum = 1.000      │
+                              └──────────────────┘
+```
+
+Why exp() specifically?
+1. **Always positive**: $e^x > 0$ for any $x$, so all probabilities are positive
+2. **Preserves ordering**: Larger logit = larger probability
+3. **Amplifies differences**: exp() is convex, so gaps between large logits get magnified
+4. **Clean gradients**: The derivative of softmax has a beautiful form thanks to $\frac{d}{dx}e^x = e^x$
+
+---
+
+## Common Mistakes
+
+### The #1 Mistake: Confusing Sum and Product
+
+> **log(a + b) != log(a) + log(b)**
+
+Read that again. The log of a SUM is NOT the sum of logs. Only the log of a PRODUCT is the sum of logs:
+
+$$\log(a \times b) = \log(a) + \log(b) \quad \checkmark$$
+$$\log(a + b) \neq \log(a) + \log(b) \quad \times$$
+
+There is no clean simplification for $\log(a + b)$. This trips up even experienced practitioners when deriving gradients.
+
+### Other Pitfalls
+
+**log(0) is undefined.** In code, `np.log(0)` gives `-inf`. Always clip: `np.log(np.clip(x, 1e-15, 1))`.
+
+**Overflow with exp().** $e^{1000}$ overflows float64. In softmax, subtract the max first: `exp(x - max(x))`. This does not change the result (the shift cancels out in the ratio) but prevents overflow.
+
+**Base confusion.** `np.log()` is $\ln$ (base $e$). `np.log2()` is base 2. `np.log10()` is base 10. ML papers that write "log" almost always mean $\ln$.
+
+**Sigmoid saturation.** The sigmoid $\sigma(x) = \frac{1}{1 + e^{-x}}$ outputs values near 0 or 1 for large $|x|$. Gradients vanish there. This is why ReLU replaced sigmoid in hidden layers — but sigmoid is still used for output layers in binary classification.
+
+---
+
+## Code: Everything In Action
 
 ```python
 import numpy as np
-import matplotlib.pyplot as plt
 from typing import Callable
 
-# Basic exponential and logarithm operations
-print("=== Basic Operations ===")
-print(f"e = {np.e}")
-print(f"e^2 = {np.exp(2)}")
-print(f"ln(e) = {np.log(np.e)}")
-print(f"log10(100) = {np.log10(100)}")
-print(f"log2(8) = {np.log2(8)}")
+# ============================================================
+# BASICS: exp() and log() are inverses
+# ============================================================
+print("=== Basics ===")
+print(f"e = {np.e:.5f}")
+print(f"e^2 = {np.exp(2):.5f}")
+print(f"ln(e) = {np.log(np.e):.5f}")       # 1.0 — they undo each other
+print(f"log10(100) = {np.log10(100):.1f}")  # 2.0 — "10 to what power = 100?"
+print(f"log2(8) = {np.log2(8):.1f}")        # 3.0 — "how many doublings to 8?"
 
-
-# Laws of exponents demonstration
+# ============================================================
+# EXPONENT RULES in action
+# ============================================================
 print("\n=== Laws of Exponents ===")
 b, m, n = 2, 3, 4
 
@@ -169,135 +355,173 @@ print(f"{b}^{m} / {b}^{n} = {b**m / b**n} = {b}^{m-n} = {b**(m-n)}")
 # Power rule: (b^m)^n = b^(m*n)
 print(f"({b}^{m})^{n} = {(b**m)**n} = {b}^{m*n} = {b**(m*n)}")
 
-
-# Logarithmic identities
+# ============================================================
+# LOG RULES: product rule is the star
+# ============================================================
 print("\n=== Logarithmic Identities ===")
 x, y = 8, 4
 
-# Product rule
+# THE KEY RULE: log(x*y) = log(x) + log(y)
 print(f"log2({x}*{y}) = log2({x*y}) = {np.log2(x*y):.4f}")
 print(f"log2({x}) + log2({y}) = {np.log2(x)} + {np.log2(y)} = {np.log2(x) + np.log2(y)}")
 
-# Power rule
+# Power rule: log(x^n) = n * log(x)
 print(f"log2({x}^3) = {np.log2(x**3)}")
 print(f"3 * log2({x}) = {3 * np.log2(x)}")
 
-
-# Change of base formula
+# ============================================================
+# CHANGE OF BASE
+# ============================================================
 def log_base(x: float, base: float) -> float:
-    """Calculate logarithm with arbitrary base using change of base formula"""
+    """Calculate logarithm with arbitrary base using change of base formula."""
     return np.log(x) / np.log(base)
 
 print("\n=== Change of Base ===")
-print(f"log_5(125) = {log_base(125, 5)}")  # Should be 3
-print(f"log_3(81) = {log_base(81, 3)}")    # Should be 4
+print(f"log_5(125) = {log_base(125, 5):.1f}")  # 3.0
+print(f"log_3(81) = {log_base(81, 3):.1f}")    # 4.0
 
-
-# Softmax function - crucial in ML for converting scores to probabilities
+# ============================================================
+# SOFTMAX: the bridge from logits to probabilities
+# ============================================================
 def softmax(x: np.ndarray) -> np.ndarray:
     """
-    Compute softmax probabilities
+    Compute softmax probabilities.
 
     softmax(x_i) = exp(x_i) / sum(exp(x_j))
 
-    Numerically stable implementation subtracts max
+    Subtract max for numerical stability (does not change the result
+    because the shift cancels in the numerator/denominator ratio).
     """
-    # Subtract max for numerical stability (doesn't change result)
     exp_x = np.exp(x - np.max(x))
     return exp_x / np.sum(exp_x)
 
 logits = np.array([2.0, 1.0, 0.1])
 probs = softmax(logits)
 print(f"\n=== Softmax ===")
-print(f"Logits: {logits}")
+print(f"Logits:        {logits}")
 print(f"Probabilities: {probs}")
-print(f"Sum of probabilities: {np.sum(probs)}")  # Should be 1.0
+print(f"Sum:           {np.sum(probs):.4f}")  # 1.0000
 
-
-# Cross-entropy loss - uses logarithms
+# ============================================================
+# CROSS-ENTROPY LOSS: log turns products into sums
+# ============================================================
 def cross_entropy_loss(y_true: np.ndarray, y_pred: np.ndarray,
                        epsilon: float = 1e-15) -> float:
     """
-    Compute cross-entropy loss
+    Compute cross-entropy loss: L = -sum(y_true * log(y_pred))
 
-    L = -sum(y_true * log(y_pred))
-
-    epsilon prevents log(0)
+    This IS the running example from the chapter.
+    epsilon prevents log(0) = -inf.
     """
-    # Clip predictions to avoid log(0)
     y_pred = np.clip(y_pred, epsilon, 1 - epsilon)
     return -np.sum(y_true * np.log(y_pred))
 
 # True label is class 0 (one-hot encoded)
 y_true = np.array([1, 0, 0])
 
-# Good prediction
+# Good prediction: model is confident and correct
 y_pred_good = np.array([0.9, 0.05, 0.05])
 loss_good = cross_entropy_loss(y_true, y_pred_good)
 
-# Bad prediction
+# Bad prediction: model is confident and WRONG
 y_pred_bad = np.array([0.1, 0.5, 0.4])
 loss_bad = cross_entropy_loss(y_true, y_pred_bad)
 
 print(f"\n=== Cross-Entropy Loss ===")
-print(f"Good prediction loss: {loss_good:.4f}")
-print(f"Bad prediction loss: {loss_bad:.4f}")
+print(f"Good prediction loss: {loss_good:.4f}")   # Small — log(0.9) is close to 0
+print(f"Bad prediction loss:  {loss_bad:.4f}")     # Large — log(0.1) is very negative
 
+# ============================================================
+# WHY LOG-PROBABILITIES MATTER: the underflow problem
+# ============================================================
+print("\n=== Log-Probabilities Prevent Underflow ===")
+# Imagine 10,000 data points, each with probability 0.99
+n_samples = 10000
+prob = 0.99
 
-# Log-sum-exp trick for numerical stability
+# Direct product: UNDERFLOWS TO ZERO
+direct_product = prob ** n_samples
+print(f"Direct product of {n_samples} probabilities: {direct_product}")  # 0.0 or tiny
+
+# Log-sum: works perfectly
+log_sum = n_samples * np.log(prob)
+print(f"Sum of {n_samples} log-probs: {log_sum:.4f}")  # -100.5, perfectly fine
+
+# ============================================================
+# LOG-SUM-EXP TRICK: stable computation
+# ============================================================
 def log_sum_exp(x: np.ndarray) -> float:
     """
-    Compute log(sum(exp(x))) in a numerically stable way
+    Compute log(sum(exp(x))) without overflow.
 
     log(sum(exp(x))) = max(x) + log(sum(exp(x - max(x))))
 
-    This prevents overflow when x contains large values
+    Subtracting max prevents exp() from overflowing.
     """
     max_x = np.max(x)
     return max_x + np.log(np.sum(np.exp(x - max_x)))
 
-# Without the trick, this would overflow
 large_values = np.array([1000, 1001, 1002])
 print(f"\n=== Log-Sum-Exp Trick ===")
 print(f"Large values: {large_values}")
-print(f"log_sum_exp result: {log_sum_exp(large_values):.4f}")
-# Direct computation would give: inf
+print(f"log_sum_exp:  {log_sum_exp(large_values):.4f}")
+# Direct np.log(np.sum(np.exp(large_values))) would give inf
 
+# ============================================================
+# SIGMOID: binary classification's output function
+# ============================================================
+def sigmoid(x: np.ndarray) -> np.ndarray:
+    """
+    Sigmoid activation: sigma(x) = 1 / (1 + exp(-x))
 
-# Exponential moving average (common in ML)
+    Maps any real number to (0, 1). Used as the output layer
+    for binary classification.
+    """
+    return 1 / (1 + np.exp(-np.clip(x, -500, 500)))
+
+print(f"\n=== Sigmoid Function ===")
+test_values = np.array([-5, -1, 0, 1, 5])
+print(f"x values:   {test_values}")
+print(f"sigmoid(x): {sigmoid(test_values)}")
+# Note: sigmoid(0) = 0.5 (decision boundary)
+# sigmoid saturates near 0 and 1 for large |x|
+
+# ============================================================
+# EXPONENTIAL MOVING AVERAGE: smoothing in optimizers
+# ============================================================
 def exponential_moving_average(data: np.ndarray, alpha: float = 0.1) -> np.ndarray:
     """
-    Compute exponential moving average
-
     EMA_t = alpha * x_t + (1 - alpha) * EMA_{t-1}
 
-    Used in optimizers (momentum), batch normalization, etc.
+    Used in Adam optimizer (momentum), batch normalization
+    running statistics, and TensorBoard smoothing.
     """
     ema = np.zeros_like(data)
     ema[0] = data[0]
 
     for t in range(1, len(data)):
-        ema[t] = alpha * data[t] + (1 - alpha) * ema[t-1]
+        ema[t] = alpha * data[t] + (1 - alpha) * ema[t - 1]
 
     return ema
 
-# Example: smoothing noisy data
 np.random.seed(42)
-noisy_signal = np.sin(np.linspace(0, 4*np.pi, 100)) + np.random.randn(100) * 0.3
+noisy_signal = np.sin(np.linspace(0, 4 * np.pi, 100)) + np.random.randn(100) * 0.3
 smoothed = exponential_moving_average(noisy_signal, alpha=0.1)
 
 print(f"\n=== Exponential Moving Average ===")
 print(f"Original variance: {np.var(noisy_signal):.4f}")
 print(f"Smoothed variance: {np.var(smoothed):.4f}")
 
-
-# Learning rate decay schedules
+# ============================================================
+# LEARNING RATE DECAY: exponential schedule
+# ============================================================
 def exponential_decay(initial_lr: float, decay_rate: float,
                       epoch: int, decay_steps: int = 1) -> float:
     """
-    Exponential learning rate decay
-
     lr = initial_lr * decay_rate^(epoch / decay_steps)
+
+    The most common learning rate schedule. decay_rate < 1
+    means the learning rate shrinks exponentially.
     """
     return initial_lr * (decay_rate ** (epoch / decay_steps))
 
@@ -307,174 +531,126 @@ for epoch in [0, 10, 20, 50, 100]:
     lr = exponential_decay(initial_lr, decay_rate=0.95, epoch=epoch)
     print(f"Epoch {epoch:3d}: lr = {lr:.6f}")
 
-
-# Sigmoid function (uses exponentials)
-def sigmoid(x: np.ndarray) -> np.ndarray:
-    """
-    Sigmoid activation: σ(x) = 1 / (1 + exp(-x))
-
-    Maps any real number to (0, 1)
-    """
-    return 1 / (1 + np.exp(-np.clip(x, -500, 500)))
-
-print(f"\n=== Sigmoid Function ===")
-test_values = np.array([-5, -1, 0, 1, 5])
-print(f"x values:       {test_values}")
-print(f"sigmoid(x):     {sigmoid(test_values)}")
-
-
-# Information entropy
+# ============================================================
+# INFORMATION ENTROPY: logarithms measure surprise
+# ============================================================
 def entropy(probabilities: np.ndarray, epsilon: float = 1e-15) -> float:
     """
     Shannon entropy: H(p) = -sum(p * log2(p))
 
-    Measures uncertainty/information content
+    Maximum when all outcomes equally likely (maximum uncertainty).
+    Minimum (zero) when one outcome is certain.
     """
     p = np.clip(probabilities, epsilon, 1)
     return -np.sum(p * np.log2(p))
 
-# High entropy (uncertain)
 uniform_dist = np.array([0.25, 0.25, 0.25, 0.25])
-# Low entropy (certain)
 peaked_dist = np.array([0.97, 0.01, 0.01, 0.01])
 
 print(f"\n=== Information Entropy ===")
-print(f"Uniform distribution entropy: {entropy(uniform_dist):.4f} bits")
-print(f"Peaked distribution entropy: {entropy(peaked_dist):.4f} bits")
-
-
-# Solving exponential equations
-def solve_exponential_time(final_value: float, initial_value: float,
-                           rate: float) -> float:
-    """
-    Solve N = N0 * e^(kt) for t
-
-    t = ln(N/N0) / k
-    """
-    return np.log(final_value / initial_value) / rate
-
-# Example: How long for bacteria to triple with growth rate k=0.5?
-doubling_time = solve_exponential_time(2, 1, 0.5)
-tripling_time = solve_exponential_time(3, 1, 0.5)
-
-print(f"\n=== Exponential Growth Time ===")
-print(f"Time to double (k=0.5): {doubling_time:.4f}")
-print(f"Time to triple (k=0.5): {tripling_time:.4f}")
+print(f"Uniform distribution: {entropy(uniform_dist):.4f} bits (maximum uncertainty)")
+print(f"Peaked distribution:  {entropy(peaked_dist):.4f} bits (nearly certain)")
 ```
 
-## ML Relevance
+---
 
-### Softmax Activation
-Converts raw network outputs (logits) to probabilities:
+## Numerical Stability: The Practical Rules
 
-$$\text{softmax}(z_i) = \frac{e^{z_i}}{\sum_j e^{z_j}}$$
+You will write these patterns over and over. Burn them in.
 
-Properties:
-- All outputs are positive (due to $e^x > 0$)
-- Outputs sum to 1 (valid probability distribution)
-- Larger inputs get exponentially more probability mass
-
-### Cross-Entropy Loss
-The standard loss for classification:
-
-$$L = -\sum_i y_i \log(\hat{y}_i)$$
-
-The logarithm:
-- Penalizes confident wrong predictions heavily
-- Creates well-behaved gradients for optimization
-- Connects to information theory (surprisal)
-
-### Sigmoid Activation
-Binary classification output and hidden layer activation:
-
-$$\sigma(x) = \frac{1}{1 + e^{-x}}$$
-
-### Log-Likelihood and Probability
-Maximum likelihood estimation uses log-probabilities:
-
-$$\log P(D|\theta) = \sum_i \log P(x_i|\theta)$$
-
-The logarithm converts products to sums, preventing numerical underflow.
-
-### Batch Normalization
-Uses exponential moving averages for running statistics:
-
-$$\mu_{running} = (1 - \alpha)\mu_{running} + \alpha \mu_{batch}$$
-
-### Information Theory
-Entropy, KL divergence, and mutual information all use logarithms:
-
-$$H(p) = -\sum_i p_i \log p_i$$
-
-## When to Use / Ignore
-
-### Use Exponentials/Logarithms When:
-- Converting between additive and multiplicative scales
-- Working with probabilities (log-probabilities are more stable)
-- Modeling growth/decay processes
-- Implementing softmax, sigmoid, or cross-entropy
-- Needing to prevent numerical overflow/underflow
-
-### Common Pitfalls:
-1. **Numerical overflow**: $e^{1000}$ overflows. Use log-space computations.
-
-2. **Log of zero**: $\log(0) = -\infty$. Always add small epsilon.
-
-3. **Base confusion**: $\log$ in math often means $\ln$; in CS often means $\log_2$. Be explicit.
-
-4. **Forgetting log rules**: Common error: $\log(a+b) \neq \log(a) + \log(b)$
-
-5. **Gradient issues**: Sigmoid saturates for large $|x|$, causing vanishing gradients.
-
-### Numerical Stability Tips:
 ```python
-# BAD: Can overflow
+# ─── SOFTMAX ───────────────────────────────────────────
+# BAD: exp(1000) overflows to inf
 probs = np.exp(logits) / np.sum(np.exp(logits))
 
-# GOOD: Numerically stable softmax
-logits_stable = logits - np.max(logits)
-probs = np.exp(logits_stable) / np.sum(np.exp(logits_stable))
+# GOOD: subtract max first (result is identical, no overflow)
+shifted = logits - np.max(logits)
+probs = np.exp(shifted) / np.sum(np.exp(shifted))
 
+# ─── CROSS-ENTROPY ────────────────────────────────────
 # BAD: log(0) = -inf
 loss = -np.log(predictions)
 
-# GOOD: Clipping prevents log(0)
+# GOOD: clip to avoid log(0)
 loss = -np.log(np.clip(predictions, 1e-15, 1))
+
+# ─── BEST: combine softmax + cross-entropy ────────────
+# Work directly with logits, never compute probabilities
+def stable_cross_entropy(y_true: np.ndarray, logits: np.ndarray) -> float:
+    """Numerically stable cross-entropy directly from logits."""
+    logits_stable = logits - np.max(logits)
+    log_sum_exp = np.log(np.sum(np.exp(logits_stable)))
+    log_softmax = logits_stable - log_sum_exp
+    return -np.sum(y_true * log_softmax)
 ```
+
+Why does subtracting max work for softmax? Because:
+
+$$\frac{e^{z_i - c}}{\sum_j e^{z_j - c}} = \frac{e^{z_i} \cdot e^{-c}}{\sum_j e^{z_j} \cdot e^{-c}} = \frac{e^{z_i}}{\sum_j e^{z_j}}$$
+
+The $e^{-c}$ cancels out. You get the exact same answer, but no term overflows because the largest exponent is now 0.
+
+---
+
+## ML Applications Summary
+
+| ML Concept | Uses | Why |
+|-----------|------|-----|
+| **Softmax** | $e^{z_i} / \sum e^{z_j}$ | Turns logits into probabilities |
+| **Cross-entropy loss** | $-\sum y_i \log(\hat{y}_i)$ | Log turns likelihood product into sum |
+| **Sigmoid** | $1 / (1 + e^{-x})$ | Maps reals to (0,1) for binary classification |
+| **Log-likelihood** | $\sum_i \log P(x_i \| \theta)$ | Product of probabilities becomes sum |
+| **Learning rate decay** | $lr_0 \cdot \gamma^{epoch}$ | Exponential shrinkage of step size |
+| **Batch normalization** | $(1-\alpha)\mu_{old} + \alpha\mu_{new}$ | Exponential moving average of statistics |
+| **Entropy** | $-\sum p_i \log p_i$ | Measures uncertainty in a distribution |
+| **KL divergence** | $\sum p_i \log(p_i / q_i)$ | Measures difference between distributions |
+
+---
 
 ## Exercises
 
-### Exercise 1: Simplify Using Laws
+### Exercise 1: Simplify Using Exponent Laws
+
 Simplify: $\frac{e^{3x} \cdot e^{2x}}{e^{x}}$
 
-**Solution**:
+**Solution:**
+
 Using the laws of exponents:
+
 $$\frac{e^{3x} \cdot e^{2x}}{e^{x}} = \frac{e^{3x+2x}}{e^x} = \frac{e^{5x}}{e^x} = e^{5x-x} = e^{4x}$$
 
 ### Exercise 2: Solve for x
+
 Solve: $5^{2x-1} = 125$
 
-**Solution**:
-First, recognize that $125 = 5^3$:
+**Solution:**
+
+Recognize that $125 = 5^3$:
+
 $$5^{2x-1} = 5^3$$
 
-Since bases are equal, exponents must be equal:
-$$2x - 1 = 3$$
-$$2x = 4$$
-$$x = 2$$
+Since the bases are equal, the exponents must be equal:
 
-### Exercise 3: Implement Stable Cross-Entropy
-Write a numerically stable cross-entropy loss function that handles edge cases.
+$$2x - 1 = 3 \implies 2x = 4 \implies x = 2$$
 
-**Solution**:
+### Exercise 3: Implement Stable Cross-Entropy From Logits
+
+Write a numerically stable cross-entropy loss function that works directly from logits (not probabilities), combining the softmax and cross-entropy steps.
+
+**Solution:**
+
 ```python
 import numpy as np
 
 def stable_cross_entropy(y_true: np.ndarray, logits: np.ndarray) -> float:
     """
-    Numerically stable cross-entropy from logits (not probabilities)
+    Numerically stable cross-entropy directly from logits.
 
-    Combines softmax and cross-entropy for stability
+    Combines softmax and cross-entropy to avoid:
+    1. exp() overflow (by subtracting max)
+    2. log(0) (by never computing probabilities explicitly)
+
+    This is what PyTorch's CrossEntropyLoss does internally.
     """
     # Shift logits for numerical stability
     logits_stable = logits - np.max(logits)
@@ -488,38 +664,57 @@ def stable_cross_entropy(y_true: np.ndarray, logits: np.ndarray) -> float:
 
 # Test
 y_true = np.array([1, 0, 0])
-logits = np.array([10, 2, 1])  # High confidence correct
+logits = np.array([10, 2, 1])  # High confidence on correct class
 loss = stable_cross_entropy(y_true, logits)
 print(f"Loss: {loss:.6f}")  # Should be small
+
+# Even works with extreme logits
+extreme_logits = np.array([1000, 1, 0])  # Would overflow without stability trick
+loss_extreme = stable_cross_entropy(y_true, extreme_logits)
+print(f"Extreme loss: {loss_extreme:.6f}")  # Still works!
 ```
 
-## Summary
+### Exercise 4: Why Log-Probabilities?
 
-- **Exponential functions** $b^x$ model multiplicative growth/decay
+You are training a language model. For a sentence of 50 words, the model assigns probability $P(w_i | w_{<i})$ to each word. The sentence probability is:
 
-- **Laws of exponents** enable simplification:
-  - $b^m \cdot b^n = b^{m+n}$
-  - $(b^m)^n = b^{mn}$
-  - $b^{-n} = 1/b^n$
+$$P(\text{sentence}) = \prod_{i=1}^{50} P(w_i | w_{<i})$$
 
-- **The natural base** $e \approx 2.718$ is special because $\frac{d}{dx}e^x = e^x$
+If each word probability averages 0.1, what is the sentence probability computed directly? What happens in float64? What is the log-probability?
 
-- **Logarithms** are inverse exponentials: $\log_b(x) = y \iff b^y = x$
+**Solution:**
 
-- **Logarithmic identities** convert products to sums:
-  - $\log(xy) = \log(x) + \log(y)$
-  - $\log(x^n) = n\log(x)$
+Direct: $0.1^{50} = 10^{-50}$. Float64 can handle this (its minimum is about $10^{-308}$), but for longer sequences or smaller probabilities, you hit underflow fast. A 500-word document with average probability 0.01? That is $0.01^{500} = 10^{-1000}$ — way beyond float64.
 
-- **Change of base**: $\log_b(x) = \frac{\ln(x)}{\ln(b)}$
-
-- **ML applications are everywhere**:
-  - Softmax: $e^{z_i}/\sum e^{z_j}$
-  - Cross-entropy: $-\sum y_i \log(\hat{y}_i)$
-  - Sigmoid: $1/(1+e^{-x})$
-  - Learning rate decay, batch norm, information theory
-
-- **Numerical stability** is crucial: use log-space, subtract max, clip values
+Log-probability: $50 \times \log(0.1) = 50 \times (-2.302585) = -115.129$. A perfectly normal float64 number. No underflow, no precision loss, and you can compare sentence probabilities by comparing their log-probs.
 
 ---
 
-Next: [Chapter 5: Inequalities](./05-inequalities.md) →
+## Summary
+
+- **Exponential functions** $b^x$ model multiplicative growth and decay — and appear in softmax, sigmoid, and learning rate schedules
+
+- **Laws of exponents** let you manipulate these expressions:
+  - $b^m \cdot b^n = b^{m+n}$ (product rule)
+  - $(b^m)^n = b^{mn}$ (power rule)
+  - $b^{-n} = 1/b^n$ (negative exponent)
+
+- **The natural base** $e \approx 2.718$ is special because $\frac{d}{dx}e^x = e^x$ — the derivative equals the function itself
+
+- **Logarithms** are the inverse of exponentials: $\log_b(x) = y \iff b^y = x$
+
+- **The product rule** $\log(xy) = \log(x) + \log(y)$ is the single most important identity — it is the reason cross-entropy loss, log-likelihood, and log-probabilities exist
+
+- **Common mistake**: $\log(a + b) \neq \log(a) + \log(b)$ — only products become sums, never plain sums
+
+- **Change of base**: $\log_b(x) = \frac{\ln(x)}{\ln(b)}$
+
+- **Numerical stability is non-negotiable**: subtract max in softmax, clip before log, use log-sum-exp for large values
+
+- **Running example recap**: Cross-entropy loss $-\sum y_i \log(\hat{y}_i)$ uses log to convert a product of likelihoods into a sum. Without log, you would multiply 10,000 probabilities together and get zero.
+
+---
+
+**What's Next** — You can express growth, decay, and relationships. But how do you express CONSTRAINTS? Inequalities define the boundaries of optimization — feasible regions, margin constraints, and regularization bounds.
+
+Next: [Chapter 5: Inequalities](./05-inequalities.md) -->

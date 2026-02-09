@@ -1,594 +1,610 @@
 # Chapter 5: Common Probability Distributions
 
-## Intuition
-
-Probability distributions are like templates - patterns that show up repeatedly across different domains. Just as you might recognize that many real-world quantities follow similar shapes, mathematicians have cataloged these patterns and given them names. Knowing these distributions lets you quickly model and reason about uncertainty.
-
-**Real-world analogy**: Think of distributions like weather patterns. Once you recognize "this looks like a typical summer thunderstorm pattern," you can make predictions based on what you know about thunderstorms in general. Similarly, once you recognize "this data follows a Poisson distribution," you can apply everything known about Poisson distributions.
-
-**Why this matters for ML**: Almost every ML algorithm uses specific distributions:
-- Classification uses Bernoulli and Categorical distributions
-- Regression often assumes Gaussian noise
-- Count data uses Poisson
-- Time-to-event modeling uses Exponential
-- Knowing the right distribution leads to better models and valid inferences
-
-## Visual Explanation
-
-### Distribution Family Tree
-
-```mermaid
-graph TD
-    subgraph "Discrete Distributions"
-        B[Bernoulli<br/>Single yes/no trial]
-        Bi[Binomial<br/>Count of successes in n trials]
-        P[Poisson<br/>Count of rare events]
-
-        B --> Bi
-    end
-
-    subgraph "Continuous Distributions"
-        U[Uniform<br/>All values equally likely]
-        E[Exponential<br/>Time between events]
-        G[Gaussian/Normal<br/>Bell curve]
-    end
-
-    P -.->|"limit"| G
-    Bi -.->|"limit"| G
-
-    style B fill:#e1f5fe
-    style Bi fill:#e1f5fe
-    style P fill:#e1f5fe
-    style U fill:#fff3e0
-    style E fill:#fff3e0
-    style G fill:#fff3e0
-```
-
-### Distribution Shapes at a Glance
-
-```
-Bernoulli(p=0.3):       Binomial(n=10, p=0.3):    Poisson(λ=3):
-|                       |                          |
-| *                     |    *                     |   *
-| * *                   |   * *                    |  * *
-+---0---1---            +--0-1-2-3-4-5-6-7-8-9-10  +--0-1-2-3-4-5-6-7-8-9
-
-Uniform(0,1):           Exponential(λ=1):         Gaussian(μ=0,σ=1):
-|*********|             |*                         |      *
-|         |             | *                        |    *   *
-|         |             |  **                      |   *     *
-+---------+             +----***____               +--*---------*--
-0         1             0                          -3  0   3
-```
-
-## Mathematical Foundation
+Every ML model makes assumptions about how data is distributed. Logistic regression assumes Bernoulli outputs. Linear regression assumes Gaussian noise. VAEs use the "reparameterization trick" on Gaussians. Knowing the common distributions isn't trivia -- it's knowing which Lego bricks your models are built from.
 
 ---
 
-### 1. Bernoulli Distribution
+**Building On** -- You can compute expectations and variances for any distribution. Now meet the specific distributions that power ML: Bernoulli, Gaussian, Poisson, and friends.
 
-The simplest distribution: a single trial with two outcomes.
+---
 
-**PMF**:
+## Running Example: A Streaming Platform
+
+Throughout this chapter, we will ground every distribution in a concrete scenario you can picture:
+
+- **Movie ratings** follow a **Beta distribution** (bounded between 0 and 1, often skewed).
+- **Click-through rates** on the "Play" button are **Bernoulli** -- each user either clicks or doesn't.
+- **Daily active users** might be **Poisson** -- a count of events in a time window.
+- **Time between server crashes** is **Exponential** -- memoryless waiting.
+- **Average session length** across thousands of users converges to **Gaussian** -- thanks to the Central Limit Theorem.
+
+Keep these in mind as we work through each distribution.
+
+---
+
+## Distribution Family Map
+
+Before diving in, here is how these distributions relate to each other:
+
+```
+                   ┌──────────────────────────────────────────┐
+                   │         DISCRETE DISTRIBUTIONS           │
+                   │                                          │
+                   │  Bernoulli ──(repeat n times)──> Binomial│
+                   │     │                              │     │
+                   │     │                              │     │
+                   │     │                     (n→∞,p→0)│     │
+                   │     │                              v     │
+                   │     │                           Poisson  │
+                   └─────┼────────────────────────────┼───────┘
+                         │                            │
+                         │       (CLT / limits)       │
+                         v                            v
+                   ┌──────────────────────────────────────────┐
+                   │        CONTINUOUS DISTRIBUTIONS          │
+                   │                                          │
+                   │  Uniform    Exponential    Gaussian       │
+                   │             (time between   (bell curve)  │
+                   │              Poisson events)              │
+                   └──────────────────────────────────────────┘
+```
+
+---
+
+## 1. Bernoulli Distribution
+
+### ML Use Case
+
+Logistic regression, the workhorse of binary classification, models each label as a Bernoulli random variable. When your model outputs `P(spam) = 0.87`, it is saying "this email is drawn from a Bernoulli with p = 0.87." Dropout layers? Each neuron's keep/drop decision is an independent Bernoulli trial.
+
+> **You Already Know This** -- A Bernoulli is just a boolean: `True` with probability `p`, `False` with probability `1 - p`. Think of a coin flip, a feature flag that is randomly enabled for `p` fraction of users, or a single click/no-click event.
+
+### ASCII Visualization
+
+```
+  Bernoulli(p = 0.3)            Bernoulli(p = 0.7)
+
+  P(X=k)                        P(X=k)
+  |                              |
+  |                              |
+ 0.7 ████                       0.7      ████
+  |  ████                        |       ████
+ 0.3      ████                  0.3 ████
+  |       ████                   |  ████
+  +---+------+---                +---+------+---
+      0      1                       0      1
+      (fail) (success)               (fail) (success)
+```
+
+### Code Exploration
+
+```python
+import numpy as np
+from scipy import stats
+
+# ----- Bernoulli: Click-through on "Play" button -----
+p_click = 0.12  # 12% click-through rate
+bernoulli = stats.bernoulli(p_click)
+
+# Simulate 10,000 users visiting the page
+np.random.seed(42)
+clicks = bernoulli.rvs(size=10_000)
+
+print(f"Bernoulli(p={p_click})")
+print(f"P(click)   = {bernoulli.pmf(1):.4f}")
+print(f"P(no click)= {bernoulli.pmf(0):.4f}")
+print(f"Simulated CTR: {clicks.mean():.4f}")
+print(f"Mean (theory): {bernoulli.mean():.4f}")
+print(f"Var  (theory): {bernoulli.var():.4f}")
+```
+
+### Math Formalization
+
+**PMF (Probability Mass Function)**:
+
 $$P(X = k) = p^k (1-p)^{1-k}, \quad k \in \{0, 1\}$$
 
-Or simply: $P(X=1) = p$, $P(X=0) = 1-p$
+Or more plainly: $P(X=1) = p$, $P(X=0) = 1-p$.
 
-**Parameters**: $p \in [0, 1]$ (probability of success)
+**Parameter**: $p \in [0, 1]$ -- the probability of success.
 
-**Moments**:
-- Mean: $\mathbb{E}[X] = p$
-- Variance: $\text{Var}(X) = p(1-p)$
+### Properties
 
-**Use cases**: Coin flips, binary classification labels, click/no-click events
+- **Mean**: $\mathbb{E}[X] = p$
+- **Variance**: $\text{Var}(X) = p(1-p)$
+- Maximum variance occurs at $p = 0.5$ (maximum uncertainty).
+- The Bernoulli is the building block: every other discrete distribution in this chapter is constructed from Bernoulli trials.
 
 ---
 
-### 2. Binomial Distribution
+## 2. Binomial Distribution
 
-Count of successes in $n$ independent Bernoulli trials.
+### ML Use Case
+
+A/B testing is built on the Binomial. You show a new UI to 1,000 users, and you count how many convert. That count is Binomial(n=1000, p). Ensemble methods that take a majority vote among `n` classifiers? The vote count follows a Binomial distribution.
+
+> **You Already Know This** -- Binomial = counting successes in `n` independent trials. Like asking "how many of 100 HTTP requests succeed?" or "how many of 50 deploys trigger a rollback this quarter?"
+
+### ASCII Visualization
+
+```
+  Binomial(n=10, p=0.3)                 Binomial(n=20, p=0.5)
+
+  P(X=k)                                P(X=k)
+  |                                      |
+ 0.27 ██                                0.18       ██
+  |   ██ ██                              |      ██ ██ ██
+ 0.20 ██ ██                             0.12   ██ ██ ██ ██
+  |   ██ ██ ██                           |  ██ ██ ██ ██ ██ ██
+ 0.10 ██ ██ ██ ██                       0.06 ██ ██ ██ ██ ██ ██ ██
+  |██ ██ ██ ██ ██ ██                     |██ ██ ██ ██ ██ ██ ██ ██ ██
+  +--+--+--+--+--+--+--+--+--+--+--     +--+--+--+--+--+--+--+--+--+--+--
+     0  1  2  3  4  5  6  7  8  9 10       5  6  7  8  9 10 11 12 13 14 15
+                  k                                      k
+```
+
+### Code Exploration
+
+```python
+from scipy import stats
+
+# ----- Binomial: A/B Testing -----
+# 100 users see a new recommendation banner. Baseline conversion = 10%.
+n_users = 100
+p_baseline = 0.10
+binomial = stats.binom(n=n_users, p=p_baseline)
+
+print(f"Binomial(n={n_users}, p={p_baseline})")
+print(f"Expected conversions: {binomial.mean():.1f}")
+print(f"Std dev: {binomial.std():.2f}")
+
+# We observe 15 conversions. Is this surprisingly high?
+observed = 15
+p_value = 1 - binomial.cdf(observed - 1)  # P(X >= 15)
+print(f"\nObserved: {observed} conversions")
+print(f"P(X >= {observed} | p={p_baseline}) = {p_value:.4f}")
+print(f"Significant at alpha=0.05? {'Yes' if p_value < 0.05 else 'No'}")
+
+# PMF for key values
+print("\nPMF for selected k:")
+for k in [5, 8, 10, 12, 15, 20]:
+    print(f"  P(X={k:2d}) = {binomial.pmf(k):.4f}")
+
+# Cumulative probabilities
+print(f"\nP(X <= 12) = {binomial.cdf(12):.4f}")
+print(f"P(8 <= X <= 15) = {binomial.cdf(15) - binomial.cdf(7):.4f}")
+```
+
+### Math Formalization
 
 **PMF**:
-$$P(X = k) = \binom{n}{k} p^k (1-p)^{n-k}, \quad k \in \{0, 1, ..., n\}$$
 
-**Parameters**: $n$ (number of trials), $p$ (success probability)
+$$P(X = k) = \binom{n}{k} p^k (1-p)^{n-k}, \quad k \in \{0, 1, \ldots, n\}$$
 
-**Moments**:
-- Mean: $\mathbb{E}[X] = np$
-- Variance: $\text{Var}(X) = np(1-p)$
+**Parameters**: $n$ (number of trials), $p \in [0,1]$ (success probability per trial).
 
-**Relationship**: Sum of $n$ independent Bernoulli($p$) random variables.
+**Relationship to Bernoulli**: If $X_1, X_2, \ldots, X_n$ are independent $\text{Bernoulli}(p)$ random variables, then $X = \sum_{i=1}^n X_i \sim \text{Binomial}(n, p)$.
 
-**Use cases**: Number of heads in $n$ coin flips, number of defective items in a batch, A/B test conversions
+### Properties
+
+- **Mean**: $\mathbb{E}[X] = np$
+- **Variance**: $\text{Var}(X) = np(1-p)$
+- As $n \to \infty$ with $p$ fixed, the Binomial approaches a Gaussian (this is why the normal approximation works for large A/B tests).
+- As $n \to \infty$ and $p \to 0$ with $np = \lambda$ held constant, the Binomial approaches a Poisson (rare events regime).
 
 ---
 
-### 3. Poisson Distribution
+## 3. Poisson Distribution
 
-Count of events occurring in a fixed interval when events happen at a constant average rate.
+### ML Use Case
+
+Poisson regression models count data -- how many words appear in a document, how many items a user purchases, how many anomalies a monitoring system flags per hour. In NLP, word frequencies in a fixed-length text window are often modeled as Poisson. Any time your target variable is a non-negative integer with no hard upper bound, Poisson is your first candidate.
+
+> **You Already Know This** -- Poisson counts events in a time window. Think "requests per second hitting your load balancer," "errors per hour in your logging dashboard," or "Slack messages per day in #incidents."
+
+### ASCII Visualization
+
+```
+  Poisson(lambda=2)              Poisson(lambda=5)
+
+  P(X=k)                        P(X=k)
+  |                              |
+ 0.27 ██                        0.18          ██
+  |   ██ ██                      |         ██ ██
+ 0.18 ██ ██                     0.14      ██ ██ ██
+  |██ ██ ██                      |     ██ ██ ██ ██
+ 0.09 ██ ██ ██ ██               0.07   ██ ██ ██ ██ ██
+  |██ ██ ██ ██ ██ ██             |  ██ ██ ██ ██ ██ ██ ██
+  +--+--+--+--+--+--+--+--      +--+--+--+--+--+--+--+--+--+--+--
+     0  1  2  3  4  5  6  7        0  1  2  3  4  5  6  7  8  9 10
+                k                                 k
+
+  Note: mean = variance = lambda (a unique Poisson signature)
+```
+
+### Code Exploration
+
+```python
+from scipy import stats
+import numpy as np
+
+# ----- Poisson: Errors per hour in production -----
+lambda_errors = 3  # average 3 errors per hour
+poisson = stats.poisson(mu=lambda_errors)
+
+print(f"Poisson(lambda={lambda_errors})")
+print(f"Mean = {poisson.mean():.4f}")
+print(f"Var  = {poisson.var():.4f}")
+print("Notice: mean == variance -- the Poisson signature!\n")
+
+# PMF
+print("PMF values:")
+for k in range(10):
+    bar = "█" * int(poisson.pmf(k) * 100)
+    print(f"  P(X={k}) = {poisson.pmf(k):.4f}  {bar}")
+
+# Operational questions
+print(f"\nP(zero errors this hour)     = {poisson.pmf(0):.4f}")
+print(f"P(more than 5 errors)        = {1 - poisson.cdf(5):.4f}")
+
+# Scaling: errors per day (24 hours) ~ Poisson(3 * 24 = 72)
+daily = stats.poisson(mu=lambda_errors * 24)
+print(f"\nDaily errors: Poisson(lambda={lambda_errors * 24})")
+print(f"P(daily errors > 80) = {1 - daily.cdf(80):.4f}")
+```
+
+### Math Formalization
 
 **PMF**:
-$$P(X = k) = \frac{\lambda^k e^{-\lambda}}{k!}, \quad k \in \{0, 1, 2, ...\}$$
 
-**Parameters**: $\lambda > 0$ (rate parameter = average count)
+$$P(X = k) = \frac{\lambda^k e^{-\lambda}}{k!}, \quad k \in \{0, 1, 2, \ldots\}$$
 
-**Moments**:
-- Mean: $\mathbb{E}[X] = \lambda$
-- Variance: $\text{Var}(X) = \lambda$
+**Parameter**: $\lambda > 0$ (rate parameter = expected count).
 
-**Key property**: Mean equals variance!
+**Key identity**: Mean equals variance. If your observed data has variance much larger than its mean, Poisson is the wrong model -- consider Negative Binomial instead.
 
-**Use cases**: Website visits per hour, typos per page, mutations per genome, arrivals at a queue
+### Properties
+
+- **Mean**: $\mathbb{E}[X] = \lambda$
+- **Variance**: $\text{Var}(X) = \lambda$
+- **Additivity**: If $X \sim \text{Poisson}(\lambda_1)$ and $Y \sim \text{Poisson}(\lambda_2)$ are independent, then $X + Y \sim \text{Poisson}(\lambda_1 + \lambda_2)$. This is why you can scale from "errors per hour" to "errors per day."
+- **Poisson limit of Binomial**: When $n$ is large and $p$ is small, $\text{Binomial}(n, p) \approx \text{Poisson}(np)$.
 
 ---
 
-### 4. Uniform Distribution
+## 4. Uniform Distribution
 
-All values in a range are equally likely.
+### ML Use Case
+
+Before Xavier/He initialization existed, neural network weights were initialized from a Uniform distribution. Random search for hyperparameter tuning draws candidates uniformly. In Bayesian inference, a Uniform prior says "I have no idea which value is more likely" -- the principle of maximum ignorance. The `random()` function you call every day returns $\text{Uniform}(0, 1)$.
+
+### ASCII Visualization
+
+```
+  Uniform(a=0, b=1)             Uniform(a=2, b=8)
+
+  f(x)                          f(x)
+  |                              |
+ 1.0 ████████████████████       0.167 ████████████████████
+  |  ████████████████████        |    ████████████████████
+  |  ████████████████████        |    ████████████████████
+  |  ████████████████████        |    ████████████████████
+  +--+------------------+--      +----+------------------+--
+     0                  1             2                  8
+
+  Height = 1/(b - a)    <-- must integrate to 1
+```
+
+### Code Exploration
+
+```python
+from scipy import stats
+
+# ----- Uniform: Random hyperparameter search -----
+# Search learning rate in [0.0001, 0.01]
+a, b = 0.0001, 0.01
+uniform = stats.uniform(loc=a, scale=b - a)  # scipy parametrization!
+
+print(f"Uniform(a={a}, b={b})")
+print(f"Mean = {uniform.mean():.6f}  (should be {(a+b)/2:.6f})")
+print(f"Var  = {uniform.var():.10f}  (should be {(b-a)**2/12:.10f})")
+
+# PDF is constant
+print(f"\nPDF (constant) = {uniform.pdf(0.005):.4f} = 1/(b-a) = {1/(b-a):.4f}")
+
+# Probability of landing in a sub-interval
+print(f"\nP(0.001 < lr < 0.005) = {uniform.cdf(0.005) - uniform.cdf(0.001):.4f}")
+
+# Generate 5 candidate learning rates
+np.random.seed(42)
+candidates = uniform.rvs(size=5)
+print(f"\n5 random learning rates: {[f'{x:.6f}' for x in candidates]}")
+```
+
+### Math Formalization
 
 **PDF**:
+
 $$f(x) = \frac{1}{b-a}, \quad x \in [a, b]$$
 
 **CDF**:
+
 $$F(x) = \frac{x-a}{b-a}, \quad x \in [a, b]$$
 
-**Parameters**: $a$ (minimum), $b$ (maximum)
+**Parameters**: $a$ (minimum), $b$ (maximum).
 
-**Moments**:
-- Mean: $\mathbb{E}[X] = \frac{a+b}{2}$
-- Variance: $\text{Var}(X) = \frac{(b-a)^2}{12}$
+### Properties
 
-**Use cases**: Random number generation, non-informative priors, random initialization
+- **Mean**: $\mathbb{E}[X] = \frac{a+b}{2}$
+- **Variance**: $\text{Var}(X) = \frac{(b-a)^2}{12}$
+- Maximum entropy distribution on a bounded interval -- the "most uncertain" you can be when you only know the range.
+- **Quantiles**: The $q$-th quantile is simply $a + q(b - a)$. Linear and predictable.
 
 ---
 
-### 5. Exponential Distribution
+## 5. Exponential Distribution
 
-Time between events in a Poisson process (memoryless waiting time).
+### ML Use Case
+
+Survival analysis models (used in churn prediction, medical AI, and predictive maintenance) are built on the Exponential distribution. "How long until a user churns?" "How long until this hard drive fails?" If events arrive as a Poisson process, the waiting time between events is Exponential. It is the continuous-time cousin of the geometric distribution.
+
+### ASCII Visualization
+
+```
+  Exponential(lambda=1)          Exponential(lambda=0.5)
+
+  f(x)                           f(x)
+  |                               |
+ 1.0 █                           0.5 ████
+  |  ██                           |  ██████
+  |  ████                         |  ████████
+  |  ██████                       |  ████████████
+  |  ████████                     |  ████████████████
+  |  ██████████████               |  ████████████████████████
+  |  ████████████████████____     |  ████████████████████████████████____
+  +--+--+--+--+--+--+--+--+--    +--+--+--+--+--+--+--+--+--+--+--+--
+     0  1  2  3  4  5  6  7  8       0  1  2  3  4  5  6  7  8  9 10 11
+
+  Rapid decay (high lambda)       Slow decay (low lambda)
+  Mean = 1/lambda                 Mean = 1/lambda
+```
+
+### Code Exploration
+
+```python
+from scipy import stats
+
+# ----- Exponential: Time between server crashes -----
+# Average 1 crash per 30 days => lambda = 1/30, mean = 30 days
+mean_days = 30
+lambda_rate = 1 / mean_days
+exponential = stats.expon(scale=mean_days)  # scipy uses scale = 1/lambda
+
+print(f"Exponential(lambda={lambda_rate:.4f}, mean={mean_days} days)")
+print(f"Mean = {exponential.mean():.2f} days")
+print(f"Var  = {exponential.var():.2f} days^2")
+print(f"Std  = {exponential.std():.2f} days")
+
+# Operational questions
+print(f"\nP(crash within 7 days)  = {exponential.cdf(7):.4f}")
+print(f"P(survive > 60 days)   = {1 - exponential.cdf(60):.4f}")
+
+# Memoryless property -- this is the key insight
+print("\n--- Memoryless Property ---")
+print("You've survived 20 days. P(crash before day 27 | survived 20):")
+p_cond = (exponential.cdf(27) - exponential.cdf(20)) / (1 - exponential.cdf(20))
+print(f"  P(X < 27 | X > 20) = {p_cond:.4f}")
+print(f"  P(X < 7)           = {exponential.cdf(7):.4f}")
+print("  They're equal! The past doesn't matter.")
+
+# Connection to Poisson
+print(f"\n--- Poisson Connection ---")
+print(f"If crashes ~ Poisson(rate={lambda_rate:.4f}/day),")
+print(f"then time between crashes ~ Exponential(mean={mean_days} days)")
+```
+
+### Math Formalization
 
 **PDF**:
+
 $$f(x) = \lambda e^{-\lambda x}, \quad x \geq 0$$
 
 **CDF**:
+
 $$F(x) = 1 - e^{-\lambda x}, \quad x \geq 0$$
 
-**Parameters**: $\lambda > 0$ (rate parameter)
+**Parameter**: $\lambda > 0$ (rate parameter). Equivalently, mean $= 1/\lambda$.
 
-**Moments**:
-- Mean: $\mathbb{E}[X] = \frac{1}{\lambda}$
-- Variance: $\text{Var}(X) = \frac{1}{\lambda^2}$
+**Memoryless property** (unique to the Exponential among continuous distributions):
 
-**Key property**: Memoryless - $P(X > s + t | X > s) = P(X > t)$
+$$P(X > s + t \mid X > s) = P(X > t)$$
 
-**Use cases**: Time until next customer, radioactive decay, component failure time
+### Properties
+
+- **Mean**: $\mathbb{E}[X] = \frac{1}{\lambda}$
+- **Variance**: $\text{Var}(X) = \frac{1}{\lambda^2}$
+- The only continuous memoryless distribution.
+- Dual of Poisson: if events arrive at rate $\lambda$ (Poisson process), the inter-arrival times are $\text{Exponential}(\lambda)$.
+
+> **Watch out for scipy's parametrization**: `stats.expon(scale=...)` takes `scale = 1/lambda`, not `lambda` directly. This bites everyone at least once.
 
 ---
 
-### 6. Gaussian (Normal) Distribution
+## 6. Gaussian (Normal) Distribution
 
-The "bell curve" - the most important distribution in statistics.
+### ML Use Case
+
+The Gaussian is everywhere in ML. Linear regression assumes the residuals are Gaussian. Gaussian Processes place a Gaussian prior over entire functions. Batch normalization pushes activations toward a Gaussian. VAEs encode data into a Gaussian latent space and use the "reparameterization trick" ($z = \mu + \sigma \cdot \epsilon$, where $\epsilon \sim \mathcal{N}(0,1)$) to backpropagate through the sampling step. Weight initialization (Xavier, He) draws from scaled Gaussians.
+
+> **You Already Know This** -- The Central Limit Theorem says that averages of *anything* (response times, request sizes, error counts) converge to a Gaussian as sample size grows. Your system's load average is approximately Gaussian. So are the means in your A/B test dashboards.
+
+### ASCII Visualization
+
+```
+  Gaussian(mu=0, sigma=1)  -- Standard Normal
+
+  f(x)
+  |
+ 0.40          ████
+  |          ████████
+ 0.30      ████████████
+  |      ████████████████
+ 0.20   ████████████████████
+  |   ████████████████████████
+ 0.10 ██████████████████████████████
+  |████████████████████████████████████
+  +--+--+--+--+--+--+--+--+--+--+--+--
+    -3    -2    -1     0     1     2     3
+
+  |-------- 68% --------|     (mu +/- 1*sigma)
+  |------------ 95% -----------|  (mu +/- 2*sigma)
+  |--------------- 99.7% --------------|  (mu +/- 3*sigma)
+```
+
+### Code Exploration
+
+```python
+from scipy import stats
+import numpy as np
+
+# ----- Gaussian: Session length on our streaming platform -----
+# Average session = 45 min, std dev = 12 min
+mu, sigma = 45, 12
+normal = stats.norm(loc=mu, scale=sigma)
+
+print(f"Normal(mu={mu}, sigma={sigma})")
+print(f"Mean = {normal.mean():.2f}")
+print(f"Var  = {normal.var():.2f}")
+print(f"Std  = {normal.std():.2f}")
+
+# The 68-95-99.7 rule
+print("\n--- 68-95-99.7 Rule ---")
+for n_sigma, label in [(1, "68%"), (2, "95%"), (3, "99.7%")]:
+    lo, hi = mu - n_sigma * sigma, mu + n_sigma * sigma
+    prob = normal.cdf(hi) - normal.cdf(lo)
+    print(f"  P({lo} < X < {hi}) = {prob:.4f}  ({label})")
+
+# Percentiles -- useful for alerting thresholds
+print("\n--- Percentiles (for SLO thresholds) ---")
+for p in [0.50, 0.90, 0.95, 0.99]:
+    print(f"  p{int(p*100):2d} = {normal.ppf(p):.1f} min")
+
+# Z-scores: standardization
+print("\n--- Z-scores ---")
+x_val = 70
+z = (x_val - mu) / sigma
+print(f"  Session of {x_val} min => Z = {z:.2f}")
+print(f"  P(session > {x_val} min) = {1 - normal.cdf(x_val):.4f}")
+
+# Central Limit Theorem in action
+print("\n--- CLT Demo ---")
+np.random.seed(42)
+# Exponential (heavily skewed) session data
+raw_sessions = stats.expon(scale=45).rvs(size=100_000)
+# Take means of groups of 30
+means_of_30 = [raw_sessions[i:i+30].mean() for i in range(0, 90_000, 30)]
+print(f"  Raw data (exponential): skewness = {stats.skew(raw_sessions):.2f}")
+print(f"  Means of 30:            skewness = {stats.skew(means_of_30):.2f}")
+print(f"  (Much closer to 0 = Gaussian-like)")
+```
+
+### Math Formalization
 
 **PDF**:
+
 $$f(x) = \frac{1}{\sigma\sqrt{2\pi}} \exp\left(-\frac{(x-\mu)^2}{2\sigma^2}\right)$$
 
-**Parameters**: $\mu$ (mean), $\sigma > 0$ (standard deviation)
+**Parameters**: $\mu \in \mathbb{R}$ (mean), $\sigma > 0$ (standard deviation).
 
-**Moments**:
-- Mean: $\mathbb{E}[X] = \mu$
-- Variance: $\text{Var}(X) = \sigma^2$
+**Standard Normal**: When $\mu = 0$ and $\sigma = 1$, we write $Z \sim \mathcal{N}(0, 1)$.
 
-**Standard Normal**: $\mu = 0$, $\sigma = 1$, denoted $Z \sim \mathcal{N}(0, 1)$
+**Standardization**: Any Gaussian can be converted to the standard normal via $Z = \frac{X - \mu}{\sigma}$.
 
 **The 68-95-99.7 Rule**:
 - 68% of data within $\mu \pm \sigma$
 - 95% within $\mu \pm 2\sigma$
 - 99.7% within $\mu \pm 3\sigma$
 
-**Why so important**:
-1. **Central Limit Theorem**: Sum of many independent random variables approaches normal
-2. **Maximum Entropy**: Normal maximizes entropy for given mean and variance
-3. **Mathematical Convenience**: Closed under linear transformations, marginalization
+### Properties
 
-**Use cases**: Measurement errors, heights, IQ scores, noise in regression, prior distributions
+- **Mean**: $\mathbb{E}[X] = \mu$
+- **Variance**: $\text{Var}(X) = \sigma^2$
+- **Closed under linear transformations**: If $X \sim \mathcal{N}(\mu, \sigma^2)$, then $aX + b \sim \mathcal{N}(a\mu + b, a^2\sigma^2)$.
+- **Sum of independent Gaussians**: If $X \sim \mathcal{N}(\mu_1, \sigma_1^2)$ and $Y \sim \mathcal{N}(\mu_2, \sigma_2^2)$ are independent, then $X + Y \sim \mathcal{N}(\mu_1 + \mu_2, \sigma_1^2 + \sigma_2^2)$.
+- **Maximum entropy**: Among all distributions with a given mean and variance, the Gaussian has the highest entropy -- it is the "least informative" choice.
 
-## Code Example
+**Why the Gaussian dominates ML**:
 
-```python
-import numpy as np
-from scipy import stats
-import matplotlib.pyplot as plt
+1. **Central Limit Theorem** -- The sum (or average) of many independent random variables approaches a Gaussian, regardless of their original distribution.
+2. **Maximum entropy** -- It makes the fewest assumptions beyond mean and variance.
+3. **Mathematical convenience** -- Products of Gaussian PDFs are Gaussian. Marginals and conditionals of multivariate Gaussians are Gaussian. This makes Bayesian updates tractable.
 
-# =============================================================================
-# Example 1: Bernoulli Distribution
-# =============================================================================
+---
 
-def bernoulli_example():
-    """Demonstrate the Bernoulli distribution."""
-    print("Bernoulli Distribution")
-    print("=" * 50)
+## Common Mistakes
 
-    p = 0.7  # Probability of success
-    bernoulli = stats.bernoulli(p)
+> **Not everything is Gaussian!** Heavy-tailed data -- like income distributions, network traffic bursts, stock returns, and outlier-heavy sensor readings -- breaks Gaussian assumptions badly. A Gaussian model assigns negligible probability to extreme events that happen regularly in heavy-tailed data. If your data has frequent outliers, consider Student's t-distribution, log-normal, or Pareto distributions instead. Always plot your data before assuming a distribution.
 
-    print(f"\nBernoulli(p={p})")
-    print(f"P(X=0) = {bernoulli.pmf(0):.4f}")
-    print(f"P(X=1) = {bernoulli.pmf(1):.4f}")
-    print(f"Mean = {bernoulli.mean():.4f} (should be {p})")
-    print(f"Variance = {bernoulli.var():.4f} (should be {p*(1-p):.4f})")
+Other pitfalls to watch for:
 
-    # Simulate
-    np.random.seed(42)
-    samples = bernoulli.rvs(size=10000)
-    print(f"\nSimulation (n=10000):")
-    print(f"Proportion of 1s: {np.mean(samples):.4f}")
+| Mistake | Why It Fails | What to Use Instead |
+|---------|-------------|-------------------|
+| Assuming Gaussian for bounded data | Gaussian extends to $\pm\infty$; heights, probabilities, ratings cannot be negative | Beta (for [0,1] data), Truncated Normal |
+| Using Poisson when variance >> mean | Poisson requires mean $=$ variance | Negative Binomial |
+| Confusing Exponential rate vs. scale | scipy uses `scale = 1/lambda` | Always double-check parametrization |
+| Applying CLT with tiny samples | CLT is asymptotic; $n=5$ is not enough | Use $n \geq 30$ as a rough guideline |
+| Using Bernoulli for multi-class | Bernoulli is strictly binary | Categorical / Multinomial |
 
-bernoulli_example()
+---
 
-# =============================================================================
-# Example 2: Binomial Distribution
-# =============================================================================
+## Distribution-Algorithm Cheat Sheet
 
-def binomial_example():
-    """Demonstrate the Binomial distribution."""
-    print("\n\n" + "=" * 50)
-    print("Binomial Distribution")
-    print("=" * 50)
-
-    n, p = 20, 0.3
-    binomial = stats.binom(n=n, p=p)
-
-    print(f"\nBinomial(n={n}, p={p})")
-    print(f"Mean = {binomial.mean():.4f} (should be {n*p})")
-    print(f"Variance = {binomial.var():.4f} (should be {n*p*(1-p):.4f})")
-
-    # PMF for various k
-    print("\nPMF values:")
-    for k in range(0, 11):
-        print(f"P(X={k:2d}) = {binomial.pmf(k):.4f}")
-
-    # Probability questions
-    print(f"\nP(X <= 5) = {binomial.cdf(5):.4f}")
-    print(f"P(X > 8) = {1 - binomial.cdf(8):.4f}")
-    print(f"P(4 <= X <= 8) = {binomial.cdf(8) - binomial.cdf(3):.4f}")
-
-    # Application: A/B Testing
-    print("\n--- A/B Testing Application ---")
-    print("100 visitors, baseline conversion rate 10%")
-    print("We observe 15 conversions. How unlikely is this?")
-
-    ab_test = stats.binom(n=100, p=0.10)
-    p_value = 1 - ab_test.cdf(14)  # P(X >= 15)
-    print(f"P(X >= 15 | p=0.10) = {p_value:.4f}")
-    print(f"This is {'statistically significant' if p_value < 0.05 else 'not significant'} at alpha=0.05")
-
-binomial_example()
-
-# =============================================================================
-# Example 3: Poisson Distribution
-# =============================================================================
-
-def poisson_example():
-    """Demonstrate the Poisson distribution."""
-    print("\n\n" + "=" * 50)
-    print("Poisson Distribution")
-    print("=" * 50)
-
-    # Average 3 website errors per day
-    lambda_param = 3
-    poisson = stats.poisson(mu=lambda_param)
-
-    print(f"\nPoisson(λ={lambda_param})")
-    print(f"Mean = {poisson.mean():.4f}")
-    print(f"Variance = {poisson.var():.4f}")
-    print("Note: Mean equals Variance for Poisson!")
-
-    print("\nPMF values:")
-    for k in range(10):
-        print(f"P(X={k}) = {poisson.pmf(k):.4f}")
-
-    # Probability questions
-    print(f"\nP(no errors) = P(X=0) = {poisson.pmf(0):.4f}")
-    print(f"P(more than 5 errors) = {1 - poisson.cdf(5):.4f}")
-
-    # Scaling property: If errors per day ~ Poisson(3),
-    # then errors per week ~ Poisson(21)
-    weekly_poisson = stats.poisson(mu=lambda_param * 7)
-    print(f"\nWeekly errors: Poisson(λ={lambda_param * 7})")
-    print(f"P(weekly errors > 25) = {1 - weekly_poisson.cdf(25):.4f}")
-
-poisson_example()
-
-# =============================================================================
-# Example 4: Uniform Distribution
-# =============================================================================
-
-def uniform_example():
-    """Demonstrate the Uniform distribution."""
-    print("\n\n" + "=" * 50)
-    print("Uniform Distribution")
-    print("=" * 50)
-
-    a, b = 2, 8
-    uniform = stats.uniform(loc=a, scale=b-a)  # scipy parametrization
-
-    print(f"\nUniform(a={a}, b={b})")
-    print(f"Mean = {uniform.mean():.4f} (should be {(a+b)/2})")
-    print(f"Variance = {uniform.var():.4f} (should be {(b-a)**2/12:.4f})")
-
-    # PDF is constant
-    print(f"\nPDF value (constant) = {uniform.pdf(5):.4f} = 1/(b-a) = {1/(b-a):.4f}")
-
-    # Probability of being in a sub-interval
-    print(f"\nP(3 < X < 6) = {uniform.cdf(6) - uniform.cdf(3):.4f}")
-    print(f"This equals (6-3)/(8-2) = {(6-3)/(8-2):.4f}")
-
-    # Quantiles
-    print(f"\n25th percentile: {uniform.ppf(0.25):.4f}")
-    print(f"50th percentile: {uniform.ppf(0.50):.4f}")
-    print(f"75th percentile: {uniform.ppf(0.75):.4f}")
-
-uniform_example()
-
-# =============================================================================
-# Example 5: Exponential Distribution
-# =============================================================================
-
-def exponential_example():
-    """Demonstrate the Exponential distribution."""
-    print("\n\n" + "=" * 50)
-    print("Exponential Distribution")
-    print("=" * 50)
-
-    # Average time between customer arrivals: 5 minutes
-    # Rate λ = 1/5 customers per minute
-    mean_time = 5
-    lambda_rate = 1 / mean_time
-    exponential = stats.expon(scale=mean_time)  # scipy uses scale = 1/lambda
-
-    print(f"\nExponential(λ={lambda_rate}, mean={mean_time})")
-    print(f"Mean = {exponential.mean():.4f}")
-    print(f"Variance = {exponential.var():.4f}")
-    print(f"Std = {exponential.std():.4f}")
-
-    # Probability questions
-    print(f"\nP(wait < 3 minutes) = {exponential.cdf(3):.4f}")
-    print(f"P(wait > 10 minutes) = {1 - exponential.cdf(10):.4f}")
-
-    # Memoryless property
-    print("\n--- Memoryless Property ---")
-    print("If you've already waited 5 minutes, P(wait > 8 | waited > 5):")
-    p_conditional = (1 - exponential.cdf(8)) / (1 - exponential.cdf(5))
-    print(f"P(X > 8 | X > 5) = {p_conditional:.4f}")
-    print(f"P(X > 3) = {1 - exponential.cdf(3):.4f}")
-    print("They're equal! Past waiting doesn't affect future.")
-
-    # Relationship to Poisson
-    print("\n--- Relationship to Poisson ---")
-    print(f"If arrivals are Poisson(λ={lambda_rate}/min),")
-    print(f"then time between arrivals is Exponential(mean={mean_time} min)")
-
-exponential_example()
-
-# =============================================================================
-# Example 6: Gaussian (Normal) Distribution
-# =============================================================================
-
-def gaussian_example():
-    """Demonstrate the Gaussian/Normal distribution."""
-    print("\n\n" + "=" * 50)
-    print("Gaussian (Normal) Distribution")
-    print("=" * 50)
-
-    mu, sigma = 100, 15  # IQ scores
-    normal = stats.norm(loc=mu, scale=sigma)
-
-    print(f"\nNormal(μ={mu}, σ={sigma})")
-    print(f"Mean = {normal.mean():.4f}")
-    print(f"Variance = {normal.var():.4f}")
-    print(f"Std = {normal.std():.4f}")
-
-    # PDF at various points
-    print("\nPDF values (note: NOT probabilities!):")
-    for x in [70, 85, 100, 115, 130]:
-        print(f"f({x}) = {normal.pdf(x):.6f}")
-
-    # 68-95-99.7 rule
-    print("\n--- 68-95-99.7 Rule ---")
-    print(f"P(μ-σ < X < μ+σ) = P({mu-sigma} < X < {mu+sigma}) = {normal.cdf(mu+sigma) - normal.cdf(mu-sigma):.4f}")
-    print(f"P(μ-2σ < X < μ+2σ) = P({mu-2*sigma} < X < {mu+2*sigma}) = {normal.cdf(mu+2*sigma) - normal.cdf(mu-2*sigma):.4f}")
-    print(f"P(μ-3σ < X < μ+3σ) = P({mu-3*sigma} < X < {mu+3*sigma}) = {normal.cdf(mu+3*sigma) - normal.cdf(mu-3*sigma):.4f}")
-
-    # Percentiles (often used for thresholds)
-    print("\n--- Percentiles ---")
-    percentiles = [0.01, 0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99]
-    for p in percentiles:
-        print(f"{p*100:5.1f}th percentile: {normal.ppf(p):.2f}")
-
-    # Z-scores
-    print("\n--- Z-scores (Standardization) ---")
-    print("Z = (X - μ) / σ transforms to Standard Normal")
-    x_value = 130
-    z_score = (x_value - mu) / sigma
-    print(f"X = {x_value} corresponds to Z = {z_score:.2f}")
-    print(f"P(X > {x_value}) = P(Z > {z_score:.2f}) = {1 - normal.cdf(x_value):.4f}")
-
-gaussian_example()
-
-# =============================================================================
-# Example 7: Comparing Distributions - Central Limit Theorem
-# =============================================================================
-
-def clt_demonstration():
-    """Demonstrate the Central Limit Theorem."""
-    print("\n\n" + "=" * 50)
-    print("Central Limit Theorem Demonstration")
-    print("=" * 50)
-
-    np.random.seed(42)
-
-    # Start with a highly non-normal distribution (exponential)
-    lambda_rate = 1
-    original_mean = 1 / lambda_rate
-    original_var = 1 / lambda_rate**2
-
-    sample_sizes = [1, 2, 5, 10, 30]
-    n_simulations = 10000
-
-    print("\nDistribution of sample means from Exponential(λ=1):")
-    print(f"Original distribution: mean={original_mean}, var={original_var}")
-    print("\nAs n increases, sample mean distribution approaches Normal:")
-
-    for n in sample_sizes:
-        # Generate many samples of size n and compute their means
-        sample_means = []
-        for _ in range(n_simulations):
-            sample = stats.expon(scale=1/lambda_rate).rvs(size=n)
-            sample_means.append(np.mean(sample))
-
-        sample_means = np.array(sample_means)
-
-        # Theoretical values from CLT
-        theoretical_mean = original_mean
-        theoretical_std = np.sqrt(original_var / n)
-
-        # Compare with simulation
-        print(f"\nn = {n}:")
-        print(f"  Simulated: mean={np.mean(sample_means):.4f}, std={np.std(sample_means):.4f}")
-        print(f"  CLT says:  mean={theoretical_mean:.4f}, std={theoretical_std:.4f}")
-
-        # Test for normality (Shapiro-Wilk test)
-        if n >= 5:
-            _, p_value = stats.shapiro(sample_means[:5000])  # limit for speed
-            print(f"  Shapiro-Wilk p-value: {p_value:.4f} (>0.05 suggests normal)")
-
-clt_demonstration()
-```
-
-## ML Relevance
-
-### Distribution-Algorithm Mapping
+Here is a quick reference for which distributions power which ML algorithms:
 
 | Distribution | ML Applications |
-|--------------|-----------------|
-| **Bernoulli** | Binary classification labels, dropout masks, binary features |
-| **Binomial** | A/B testing, multi-trial experiments, ensemble voting |
-| **Poisson** | Count regression, rare event modeling, text word counts |
-| **Uniform** | Weight initialization (pre-Xavier), random search, non-informative priors |
-| **Exponential** | Survival analysis, time-to-event, spacing in point processes |
-| **Gaussian** | Regression noise, Gaussian processes, VAE latent space, batch norm |
+|--------------|----------------|
+| **Bernoulli** | Binary classification labels, dropout masks, binary features, logistic regression output |
+| **Binomial** | A/B testing, multi-trial experiments, ensemble voting, acceptance sampling |
+| **Poisson** | Count regression, rare event modeling, NLP word counts, anomaly rates |
+| **Uniform** | Weight initialization (pre-Xavier), random hyperparameter search, non-informative priors |
+| **Exponential** | Survival analysis, churn modeling, time-to-event, Poisson process inter-arrivals |
+| **Gaussian** | Regression noise, Gaussian processes, VAE latent space, batch normalization, weight init |
 
 ### Specific Algorithms and Their Distributions
 
-1. **Logistic Regression**: Models $P(Y=1|X)$ as Bernoulli with parameter $\sigma(w^T x)$
-
+1. **Logistic Regression**: Models $P(Y=1 \mid X)$ as Bernoulli with parameter $\sigma(w^T x)$.
 2. **Naive Bayes**:
-   - Gaussian NB: Features are Gaussian given class
-   - Multinomial NB: Word counts are Multinomial
-   - Bernoulli NB: Features are binary
-
-3. **Gaussian Mixture Models**: Data is a mixture of Gaussians
-
+   - Gaussian NB: Features are Gaussian given the class.
+   - Multinomial NB: Word counts are Multinomial.
+   - Bernoulli NB: Features are binary.
+3. **Gaussian Mixture Models**: Data is a weighted mixture of Gaussians.
 4. **Neural Network Initialization**:
-   - Xavier: Uniform or Normal scaled by layer size
-   - He: Normal scaled for ReLU activations
+   - Xavier: Uniform or Normal scaled by $\sqrt{1/n_{\text{in}}}$.
+   - He: Normal scaled by $\sqrt{2/n_{\text{in}}}$ for ReLU.
+5. **Variational Autoencoders**: Latent space is Gaussian; the reparameterization trick enables backprop through sampling.
+6. **Gaussian Processes**: Prior over functions defined by a multivariate Gaussian.
+7. **Poisson Regression**: Models count data via $\log(\mathbb{E}[Y]) = w^T x$.
 
-5. **Variational Autoencoders**: Latent space is Gaussian, decoder outputs distribution parameters
+---
 
-6. **Gaussian Processes**: Prior over functions defined by multivariate Gaussian
+## Choosing the Right Distribution
 
-7. **Poisson Regression**: Model count data with Poisson distribution
+When you encounter new data, ask yourself these questions:
 
-## When to Use / Ignore
-
-### Choosing the Right Distribution
-
-| Data Characteristic | Consider Using |
-|--------------------|----------------|
+| Data Characteristic | Distribution to Consider |
+|--------------------|--------------------------|
 | Binary (0 or 1) | Bernoulli |
 | Count of successes in fixed trials | Binomial |
 | Count with no upper bound | Poisson |
-| Any value equally likely in range | Uniform |
-| Waiting time / duration | Exponential |
-| Sum of many factors / measurements | Gaussian |
+| Any value equally likely in a range | Uniform |
+| Waiting time / duration (memoryless) | Exponential |
+| Sum of many independent factors | Gaussian |
+| Proportion or probability (bounded [0,1]) | Beta |
+| Count with overdispersion (var >> mean) | Negative Binomial |
 
-### Red Flags: When Your Assumed Distribution is Wrong
+---
 
-1. **Bernoulli/Binomial**: Data has more than two outcomes
-2. **Poisson**: Variance is much different from mean
-3. **Exponential**: Data has non-zero minimum or heavy tails
-4. **Gaussian**: Data is bounded, skewed, or has outliers
-
-### Common Pitfalls
-
-1. **Assuming Gaussian when data is bounded**: Heights can't be negative, but Gaussian extends to $-\infty$.
-
-2. **Using Poisson for highly variable counts**: If variance >> mean, consider Negative Binomial.
-
-3. **Forgetting about parameters**: Exponential with rate $\lambda$ vs scale $1/\lambda$ - scipy uses scale!
-
-4. **Applying CLT too early**: CLT needs "enough" independent samples; n=30 is a rough guideline.
-
-## Exercises
-
-### Exercise 1: Choosing the Right Distribution
-
-For each scenario, identify the most appropriate distribution:
-a) Number of customers arriving at a store per hour
-b) Whether a user clicks on an ad
-c) Test scores in a large population
-d) Time until a light bulb fails
-e) Number of heads in 50 coin flips
-
-**Solution**:
-```python
-# a) Poisson - counts in a time interval
-# b) Bernoulli - binary outcome
-# c) Gaussian - sum of many factors (genetic, environmental, etc.)
-# d) Exponential - time until event (memoryless)
-# e) Binomial - fixed number of binary trials
-```
-
-### Exercise 2: Poisson Calculation
-
-A call center receives an average of 4 calls per minute. What's the probability of receiving exactly 6 calls in a minute? More than 10 calls?
-
-**Solution**:
-```python
-from scipy import stats
-
-poisson = stats.poisson(mu=4)
-
-# P(X = 6)
-p_exactly_6 = poisson.pmf(6)
-print(f"P(X = 6) = {p_exactly_6:.4f}")  # 0.1042
-
-# P(X > 10)
-p_more_than_10 = 1 - poisson.cdf(10)
-print(f"P(X > 10) = {p_more_than_10:.4f}")  # 0.0028
-```
-
-### Exercise 3: Normal Distribution Application
-
-SAT scores are approximately Normal with mean 1050 and standard deviation 200. What score is at the 90th percentile? What percentage of students score above 1300?
-
-**Solution**:
-```python
-from scipy import stats
-
-sat = stats.norm(loc=1050, scale=200)
-
-# 90th percentile
-percentile_90 = sat.ppf(0.90)
-print(f"90th percentile: {percentile_90:.0f}")  # 1306
-
-# Percentage above 1300
-pct_above_1300 = (1 - sat.cdf(1300)) * 100
-print(f"Percentage above 1300: {pct_above_1300:.1f}%")  # 10.6%
-```
-
-## Summary
-
-### Quick Reference Table
+## Quick Reference Table
 
 | Distribution | Type | Parameters | Mean | Variance |
 |--------------|------|------------|------|----------|
@@ -599,19 +615,92 @@ print(f"Percentage above 1300: {pct_above_1300:.1f}%")  # 10.6%
 | Exponential | Continuous | $\lambda$ | $\frac{1}{\lambda}$ | $\frac{1}{\lambda^2}$ |
 | Gaussian | Continuous | $\mu, \sigma$ | $\mu$ | $\sigma^2$ |
 
-### Key Takeaways
+---
 
-- **Bernoulli**: Single binary trial; building block for many other distributions
-- **Binomial**: Sum of Bernoulli trials; use for counting successes
-- **Poisson**: Counting rare events; mean equals variance
-- **Uniform**: Maximum ignorance; all values equally likely
-- **Exponential**: Memoryless waiting times; connected to Poisson process
-- **Gaussian**: The "universal" distribution via Central Limit Theorem; mathematically convenient
-- Choose distributions based on data characteristics, not convenience
-- scipy.stats provides a unified interface for all distributions
+## Exercises
+
+### Exercise 1: Choosing the Right Distribution
+
+For each scenario, identify the most appropriate distribution and explain why:
+
+a) Number of users signing up per hour on your platform
+b) Whether a user clicks on a recommendation
+c) Average response latency across thousands of requests
+d) Time until the next server failure
+e) Number of successful API calls out of 50 attempts
+
+**Solution**:
+```python
+# a) Poisson -- counting events (signups) in a fixed time interval,
+#    no hard upper bound, events roughly independent.
+
+# b) Bernoulli -- binary outcome (click / no click) for a single trial.
+
+# c) Gaussian -- by the Central Limit Theorem, the average of many
+#    independent latency measurements converges to Gaussian.
+
+# d) Exponential -- time until next event, memoryless waiting.
+
+# e) Binomial -- fixed number of trials (50), each with two outcomes
+#    (success / failure), counting total successes.
+```
+
+### Exercise 2: Poisson in Production
+
+Your error-logging system shows an average of 4 errors per hour. Calculate:
+- The probability of exactly 6 errors in an hour.
+- The probability of more than 10 errors in an hour (should you page on-call?).
+
+**Solution**:
+```python
+from scipy import stats
+
+poisson = stats.poisson(mu=4)
+
+# P(X = 6)
+p_exactly_6 = poisson.pmf(6)
+print(f"P(X = 6) = {p_exactly_6:.4f}")  # ~0.1042
+
+# P(X > 10)
+p_more_than_10 = 1 - poisson.cdf(10)
+print(f"P(X > 10) = {p_more_than_10:.4f}")  # ~0.0028
+# Very unlikely under normal conditions -- definitely page on-call!
+```
+
+### Exercise 3: Gaussian Thresholds for Alerting
+
+Your platform's session lengths are approximately Normal with mean 45 minutes and standard deviation 12 minutes. What session length is at the 95th percentile? What fraction of sessions are longer than 70 minutes?
+
+**Solution**:
+```python
+from scipy import stats
+
+sessions = stats.norm(loc=45, scale=12)
+
+# 95th percentile
+p95 = sessions.ppf(0.95)
+print(f"95th percentile: {p95:.1f} min")  # ~64.7 min
+
+# Fraction above 70 minutes
+frac_above_70 = 1 - sessions.cdf(70)
+print(f"P(session > 70 min) = {frac_above_70:.4f}")  # ~0.0186 (~1.9%)
+```
 
 ---
 
-**Congratulations!** You've completed Level 7: Probability Theory. You now have the mathematical foundation to understand uncertainty in machine learning models, interpret probabilistic predictions, and work with the most common probability distributions.
+## Summary
 
-**Next Steps**: Level 8 will build on this foundation with Statistics for Machine Learning, covering estimation, hypothesis testing, and statistical inference.
+Here are the key takeaways:
+
+- **Bernoulli** -- the boolean of probability. Single binary trial. Building block for everything else.
+- **Binomial** -- sum of Bernoulli trials. Use it for counting successes in fixed experiments and A/B tests.
+- **Poisson** -- counting events in time or space. Mean equals variance is its fingerprint.
+- **Uniform** -- maximum ignorance. All values in a range equally likely.
+- **Exponential** -- memoryless waiting times. The continuous dual of the Poisson process.
+- **Gaussian** -- the "universal" distribution via the Central Limit Theorem. Mathematically convenient, but don't use it blindly.
+- Choose distributions based on your data's characteristics, not convenience. Always plot first.
+- `scipy.stats` provides a unified interface (`pmf`/`pdf`, `cdf`, `ppf`, `rvs`) for all of them.
+
+---
+
+**What's Next** -- Probability theory gives you the language of uncertainty. Now: statistics -- learning the parameters of these distributions from actual data.

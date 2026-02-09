@@ -1,91 +1,77 @@
-# Level 3: Functions - The ML Primitive
+# Level 3: Functions
 
-## Overview
+Every ML model you've ever trained is a function. Not metaphorically — literally. A neural network that classifies images? That's a function. A transformer that generates text? That's a function. GPT, BERT, ResNet, XGBoost — all functions. They take inputs and produce outputs according to a mathematical rule. If you understand functions deeply, you understand what your models actually are.
 
-Welcome to Level 3, where we explore **functions** - arguably the most fundamental concept in machine learning. If you understand functions deeply, you understand the essence of what ML models actually do.
+## Functions in Math = Pure Functions in Code
 
-## Why Functions Are the ML Primitive
+You've been writing functions for years:
 
-At its core, every machine learning model is a function. When you strip away all the fancy terminology - neural networks, transformers, gradient boosting - what remains is simply a mathematical function that maps inputs to outputs.
-
-$$\text{Model}: \text{Input} \rightarrow \text{Output}$$
-
-Consider these examples:
-
-| ML Task | Input | Output | Function Type |
-|---------|-------|--------|---------------|
-| Image Classification | Pixel values | Class probabilities | $f: \mathbb{R}^{n \times m \times 3} \rightarrow [0,1]^k$ |
-| Regression | Features | Predicted value | $f: \mathbb{R}^n \rightarrow \mathbb{R}$ |
-| Language Model | Token sequence | Next token probabilities | $f: \mathbb{Z}^n \rightarrow [0,1]^{|V|}$ |
-| Recommendation | User + Item features | Rating prediction | $f: \mathbb{R}^{u} \times \mathbb{R}^{i} \rightarrow \mathbb{R}$ |
-
-## The Function Perspective
-
-Understanding ML through the lens of functions gives you:
-
-1. **Clarity**: Instead of black boxes, you see mappings with precise domains and ranges
-2. **Composability**: Complex models are compositions of simpler functions
-3. **Debugging intuition**: When something fails, you can trace through function transformations
-4. **Architecture design**: Choosing layers means choosing function types
-
-## What You Will Learn
-
-### Chapter 1: Functions Fundamentals
-- Domain and range - understanding input/output spaces
-- One-to-one vs many-to-one - why this matters for inverse problems
-- Function composition - how deep learning stacks transformations
-- Inverse functions - the key to understanding encoders/decoders
-
-### Chapter 2: Common Function Types
-- Linear functions - the backbone of ML
-- Polynomial functions - adding expressiveness
-- Exponential and logarithmic functions - handling scale
-- Sigmoid and softmax - probabilities from raw scores
-- Step functions - decisions and thresholds
-
-### Chapter 3: Multivariable Functions
-- Functions of many inputs - real-world feature spaces
-- Parameterized functions - what "learning" actually means
-- The $y = f(x, \theta)$ notation - separating data from parameters
-
-## The Big Picture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    MACHINE LEARNING MODEL                       │
-│                                                                 │
-│   Input x ──▶ [Function f(x, θ)] ──▶ Output ŷ                  │
-│                      │                                          │
-│                      │ Parameters θ                             │
-│                      │ (learned from data)                      │
-│                                                                 │
-│   Training: Find θ that makes f(x, θ) ≈ y for training data    │
-│   Inference: Apply f(x, θ*) to new inputs                       │
-└─────────────────────────────────────────────────────────────────┘
+```python
+def predict(features):
+    return model(features)
 ```
 
-## Prerequisites
+The mathematical definition just formalizes what you already know. In code, a pure function always returns the same output for the same input — no side effects, no hidden state. In math, a function is exactly that: a mapping from inputs to outputs. `f(x) = x²` is pure. `f(x, y) = x + y` is pure. `f(x; θ) = θx + b` is pure (the semicolon just separates data from parameters).
 
-Before diving into this level, ensure you're comfortable with:
-- Basic algebra (Level 1)
-- Set notation and intervals (Level 2)
-- Python basics (NumPy arrays, basic plotting)
+Here's the insight: **every ML model is a parameterized function** `f(x; θ)`. The model takes data `x` and weights `θ`, and produces a prediction. Training means optimizing `θ`. Inference means calling `f` with fixed `θ`. That's it. That's all of machine learning.
 
-## How to Use This Level
+## Neural Networks Are Function Composition
 
-1. **Read actively**: Work through the examples with pen and paper
-2. **Run the code**: Every code block is designed to be executable
-3. **Visualize**: The diagrams and plots build intuition
-4. **Do the exercises**: They reinforce the ML connections
+Consider a simple 3-layer neural network:
 
-## Key Insight
+```
+Input x (784 pixels from MNIST)
+    ↓
+Layer 1: f₁(x) = ReLU(W₁x + b₁)     → h₁
+    ↓
+Layer 2: f₂(h₁) = ReLU(W₂h₁ + b₂)   → h₂
+    ↓
+Layer 3: f₃(h₂) = softmax(W₃h₂ + b₃) → ŷ
+```
 
-> **"Learning" in machine learning means finding the right function parameters. "Inference" means applying that function to new inputs. Everything else is details.**
+The full model is `f(x; θ) = f₃ ∘ f₂ ∘ f₁(x)`. That's function composition — the same as middleware pipelines in web frameworks. Each layer transforms its input and passes the result to the next. The output of `f₁` must match the input of `f₂` (domain and range chaining). The parameters `θ = {W₁, b₁, W₂, b₂, W₃, b₃}` are what you optimize during training.
 
-When you finish this level, you'll see every ML model as what it truly is: a parameterized function that we optimize to map inputs to desired outputs. This perspective will serve you throughout your ML journey.
+This level teaches you the formal language of functions so you can reason precisely about what models do, why architectures work, and where things break.
 
-Let's begin!
+## What You'll Learn
+
+### [Chapter 1: Functions](01-functions.md)
+Domain, range, injectivity, composition, inverses — and exactly where each shows up in ML. Why ReLU is many-to-one (information loss). Why normalizing flows need bijective layers (invertibility). Why a neural network is literally `f₃ ∘ f₂ ∘ f₁` (composition). You already understand these ideas from code; this chapter gives you the mathematical vocabulary.
+
+### [Chapter 2: Common Function Types](02-common-function-types.md)
+ReLU, sigmoid, tanh, softmax — the functions that power ML. Why each exists, where it's used, when it fails. You'll see why we switched from sigmoid to ReLU (vanishing gradients), why softmax needs the max-subtraction trick (numerical stability), and how temperature scaling controls confidence. Includes gradient flow analysis so you understand which activation functions preserve signal during backprop.
+
+### [Chapter 3: Multivariable Functions](03-multivariable-functions.md)
+Real models take many inputs and produce many outputs. A MNIST classifier maps `R^784 → R^10`. A recommender maps `(user_features, movie_features) → rating`. This chapter covers multivariable notation, parameterized functions `f(x; θ)`, loss surfaces, contour plots, and why optimization is about navigating high-dimensional landscapes. Think of this as understanding functions that operate on vectors instead of scalars.
+
+## Building On: Level 2 (Algebra)
+
+Level 2 gave you the tools to manipulate expressions and solve equations. You learned about variables, polynomials, exponentials, and inequalities. Functions build directly on that foundation:
+
+- **Variables** → arguments to functions
+- **Expressions** → function definitions (`f(x) = 2x + 1`)
+- **Equations** → finding inputs that produce specific outputs (`f(x) = 0`)
+- **Exponentials and logs** → activation functions (sigmoid = `1/(1 + e^(-x))`)
+
+If you're comfortable with algebraic manipulation — simplifying expressions, solving for variables, understanding exponential growth — you're ready for this level.
+
+## What Comes Next: Level 4 (Linear Algebra)
+
+After this level, you'll move to **Level 4: Linear Algebra** — vectors, matrices, and transformations. Linear algebra is what happens when your function arguments become vectors instead of scalars.
+
+- **f(x)** where x is a number → Level 3 (this level)
+- **f(x)** where x is a vector → Level 4 (linear algebra)
+
+Every neural network layer is a linear transformation (`Wx + b`) followed by a nonlinear activation (`ReLU`, `sigmoid`). Linear algebra teaches you how to compute those transformations efficiently, what weight matrices actually do, and how to reason about high-dimensional spaces. Think of it as scaling up from `f: R → R` to `f: R^n → R^m`.
+
+## Navigation
+
+| Chapter | Topic | ML Connection |
+|---------|-------|---------------|
+| [01-functions.md](01-functions.md) | Domain, range, composition, inverses | Neural network layers, bijective flows |
+| [02-common-function-types.md](02-common-function-types.md) | ReLU, sigmoid, tanh, softmax | Activation functions, gradient flow |
+| [03-multivariable-functions.md](03-multivariable-functions.md) | R^n → R^m, loss surfaces, contours | Model architecture, optimization landscapes |
 
 ---
 
-**Next**: [Chapter 1 - Functions Fundamentals](01-functions.md)
+**Start here**: [Chapter 1 - Functions](01-functions.md)

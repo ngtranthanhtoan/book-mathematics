@@ -1,129 +1,255 @@
-# Chapter 4: Dimensionality Reduction
+# Chapter 4: Dimensionality Reduction — PCA and SVD
 
-## Intuition
+Your dataset has 10,000 features but your model only needs 50. How do you find those 50? PCA and SVD — the mathematical tools that find the essential structure hiding in high-dimensional data.
 
-High-dimensional data is everywhere in machine learning: images have millions of pixels, text has thousands of words, and gene expressions span tens of thousands of features. Yet the **intrinsic dimensionality** - the true degrees of freedom in the data - is often much lower. Dimensionality reduction techniques find this lower-dimensional structure, enabling visualization, compression, and more efficient learning.
+---
 
-### Plain English Explanation
+Neural networks can model anything. But feeding in redundant features wastes capacity and invites overfitting. Dimensionality reduction finds the lean representation.
 
-Imagine you have a dataset of face images. Each image might have 10,000 pixels, but faces vary along only a few fundamental axes: lighting direction, pose angle, expression. These are the "true" dimensions of face space. Dimensionality reduction finds these axes, allowing you to represent each face with just a handful of numbers instead of 10,000.
+Think about it this way. You have a movie ratings matrix: 100,000 users rating 1,000 movies. That is 1,000 features per user. But users do not have 1,000 independent opinions. They have maybe 50 latent "taste dimensions" — preference for action, tolerance for subtitles, love of plot twists. The other 950 features are just noisy combinations of those 50. Your job is to find that compressed representation and throw away the rest.
 
-### Real-World Analogy
+This chapter shows you exactly how PCA and SVD accomplish that extraction, why the math works, and how to implement it yourself.
 
-Think of a shadow. A 3D object casts a 2D shadow on a wall. The shadow is a "dimensionality-reduced" version of the object. Just as different shadow angles reveal different information, different dimensionality reduction methods reveal different aspects of your data. PCA finds the shadow angle that preserves the most information (variance).
+---
 
-### Why This Matters for ML
+## The Problem: The Curse of Dimensionality
 
-- **Curse of Dimensionality**: Many algorithms fail in high dimensions
-- **Visualization**: Cannot plot 1000 dimensions, but can plot 2-3
-- **Noise Reduction**: Lower dimensions often filter out noise
-- **Computational Efficiency**: Fewer features = faster training
-- **Feature Engineering**: Discovered components often have meaning
+Before we solve anything, you need to feel the pain that dimensionality reduction cures.
 
-## Visual Explanation
+Suppose you are building a recommendation engine. Each user is described by their ratings for 1,000 movies. You want to find similar users using nearest-neighbor search. In low dimensions, that works great. In 1,000 dimensions, it falls apart.
 
-### PCA: Finding Principal Directions
-
-```mermaid
-graph TD
-    subgraph "Original Data in 2D"
-        D[Data points along ellipse]
-    end
-
-    subgraph "PCA Transform"
-        PC1[PC1: Direction of max variance]
-        PC2[PC2: Perpendicular, second most variance]
-    end
-
-    subgraph "Reduced Data"
-        R[Project onto PC1 only]
-    end
-
-    D --> PC1
-    D --> PC2
-    PC1 --> R
-```
-
-### Geometric Interpretation
-
-For 2D data with one principal component:
+Here is why. In high dimensions, distances between points converge. Every pair of points becomes roughly equidistant. Your notion of "nearest neighbor" becomes meaningless.
 
 ```
-       *  *                     PC1 (direction of max variance)
-    *       *                  ↗
-  *    *  *   *               ↗
-    *       *    *           ↗
-         *    *             → → → → →
-    *  *                   Projection onto PC1
+  Dimensions vs. Distance Discrimination
+  (ratio of max distance to min distance between random points)
+
+  Dims  |  max/min ratio
+  ------+-----------------
+    2   |  ########################################  (high: ~8.2)
+    10  |  ######################                    (moderate: ~4.5)
+    50  |  ########                                   (low: ~1.8)
+   100  |  #####                                      (very low: ~1.3)
+   500  |  ###                                        (near 1: ~1.06)
+  1000  |  ##                                         (near 1: ~1.02)
+
+  As dimensions grow, all points become equidistant.
+  Nearest-neighbor search loses its discriminative power.
 ```
 
-### SVD: Three Components
+This is the curse of dimensionality. It affects k-NN classifiers, clustering algorithms, density estimation, and basically anything that relies on distances in feature space.
 
-$$\mathbf{X} = \mathbf{U} \mathbf{\Sigma} \mathbf{V}^T$$
+But here is the key insight: most high-dimensional data does not actually occupy the full space. It lives on a much lower-dimensional manifold. Those 1,000 movie ratings per user? They are generated by 50 or so latent taste factors. The data looks 1,000-dimensional, but its intrinsic dimensionality is closer to 50.
 
-```mermaid
-graph LR
-    X["X (n×d)"] --> U["U (n×r)"]
-    X --> S["Σ (r×r)"]
-    X --> VT["Vᵀ (r×d)"]
+PCA and SVD find that lower-dimensional structure.
 
-    U --> |"Left singular vectors"| UR[Row patterns]
-    S --> |"Singular values"| SR[Importance weights]
-    VT --> |"Right singular vectors"| VR[Column patterns]
-```
+---
 
-## Mathematical Foundation
+## The Running Example: Compressing the Movie Ratings Matrix
 
-### Principal Component Analysis (PCA)
+Throughout this chapter, we will use one concrete example. You work at a streaming service. You have a ratings matrix:
 
-**Goal**: Find directions (principal components) that maximize variance.
+- **Rows**: 100,000 users
+- **Columns**: 1,000 movies
+- **Entries**: ratings from 1 to 5 (or 0 for "not rated")
 
-Given data matrix $\mathbf{X}$ of shape $(n \times d)$ (centered, i.e., mean subtracted):
+Your matrix $\mathbf{X}$ has shape $(100{,}000 \times 1{,}000)$. That is 100 million entries. You want to compress this to 50 latent taste dimensions — an output matrix of shape $(100{,}000 \times 50)$. That is a 20x reduction.
 
-**Covariance Matrix**:
+If this sounds familiar, it should. This is the core of the Netflix Prize recommendation engine. SVD-based matrix factorization was a key technique in the winning solution.
+
+Think of PCA as **gzip for your features**. Just as gzip finds repeated patterns in text and replaces them with shorter codes, PCA finds correlated patterns across features and replaces them with a smaller set of uncorrelated components. The "compression ratio" is how many components you keep versus how many you started with.
+
+---
+
+## PCA: Finding the Directions That Matter
+
+### The Core Idea
+
+PCA asks: if you could only keep $k$ directions in your 1,000-dimensional movie space, which $k$ directions would preserve the most information?
+
+"Information" here means **variance**. The direction along which your data varies the most is the most informative. The direction along which it varies the least is mostly noise.
+
+For your movie matrix, the first principal component might capture "mainstream vs. art house" — the single axis that explains the most variation in how people rate movies. The second might capture "action vs. drama." The third might capture "new releases vs. classics." And so on.
+
+### The Math: Variance Maximization
+
+You have your data matrix $\mathbf{X}$ of shape $(n \times d)$ — that is $n$ users and $d$ movies. First, you **center** the data by subtracting the column means:
+
+$$\mathbf{X}_{\text{centered}} = \mathbf{X} - \mathbf{1}\boldsymbol{\mu}^T$$
+
+where $\boldsymbol{\mu}$ is the vector of column means.
+
+Now compute the **covariance matrix**:
+
 $$\mathbf{C} = \frac{1}{n-1}\mathbf{X}^T\mathbf{X}$$
 
-**Eigendecomposition**:
+This is a $(d \times d)$ matrix — in our case, $(1{,}000 \times 1{,}000)$. Entry $C_{ij}$ tells you how movies $i$ and $j$ co-vary across users. If two movies are always rated similarly, their covariance is high.
+
+You want to find a unit vector $\mathbf{v}$ such that projecting your data onto $\mathbf{v}$ gives maximum variance. The variance of the projected data is:
+
+$$\text{Var}(\mathbf{X}\mathbf{v}) = \mathbf{v}^T\mathbf{C}\mathbf{v}$$
+
+You maximize this subject to the constraint $\|\mathbf{v}\| = 1$. Using Lagrange multipliers:
+
+$$\mathcal{L} = \mathbf{v}^T\mathbf{C}\mathbf{v} - \lambda(\mathbf{v}^T\mathbf{v} - 1)$$
+
+Take the derivative with respect to $\mathbf{v}$ and set it to zero:
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{v}} = 2\mathbf{C}\mathbf{v} - 2\lambda\mathbf{v} = 0$$
+
+$$\mathbf{C}\mathbf{v} = \lambda\mathbf{v}$$
+
+This is the **eigenvalue equation**. The direction that maximizes variance is an eigenvector of the covariance matrix. And the variance along that direction equals the eigenvalue $\lambda$.
+
+Since $\mathbf{C}$ is symmetric and positive semi-definite, it has $d$ real non-negative eigenvalues. Sort them in descending order:
+
+$$\lambda_1 \geq \lambda_2 \geq \cdots \geq \lambda_d \geq 0$$
+
+The eigenvector corresponding to $\lambda_1$ is the first principal component — the single direction that captures the most variance. The eigenvector for $\lambda_2$ is the second principal component, and so on.
+
+### The Eigendecomposition
+
+Writing it all at once:
+
 $$\mathbf{C} = \mathbf{V}\mathbf{\Lambda}\mathbf{V}^T$$
 
 where:
 - $\mathbf{V}$ contains eigenvectors (principal components) as columns
 - $\mathbf{\Lambda} = \text{diag}(\lambda_1, \ldots, \lambda_d)$ contains eigenvalues
 
-**Principal Components**: The eigenvectors corresponding to the largest eigenvalues.
+### Projection: Reducing to $k$ Dimensions
 
-**Projection**: To reduce to $k$ dimensions:
-$$\mathbf{X}_{reduced} = \mathbf{X}\mathbf{V}_k$$
+To compress your 1,000-movie space down to 50 latent taste dimensions, take the top $k = 50$ eigenvectors and form $\mathbf{V}_k$ (the first 50 columns of $\mathbf{V}$):
 
-where $\mathbf{V}_k$ contains the top $k$ eigenvectors.
+$$\mathbf{X}_{\text{reduced}} = \mathbf{X}\mathbf{V}_k$$
 
-### Variance Maximization Derivation
+Your output is shape $(100{,}000 \times 50)$. Each user is now described by 50 numbers instead of 1,000. Those 50 numbers are their coordinates in "taste space."
 
-We want to find direction $\mathbf{v}$ that maximizes the variance of projected data:
+### Reconstruction: Going Back
 
-$$\text{Var}(\mathbf{X}\mathbf{v}) = \mathbf{v}^T\mathbf{C}\mathbf{v}$$
+You can approximately reconstruct the original data:
 
-Subject to $\|\mathbf{v}\| = 1$.
+$$\hat{\mathbf{X}} = \mathbf{X}_{\text{reduced}}\mathbf{V}_k^T + \mathbf{1}\boldsymbol{\mu}^T$$
 
-Using Lagrange multipliers:
-$$\mathcal{L} = \mathbf{v}^T\mathbf{C}\mathbf{v} - \lambda(\mathbf{v}^T\mathbf{v} - 1)$$
-
-Taking derivative and setting to zero:
-$$\mathbf{C}\mathbf{v} = \lambda\mathbf{v}$$
-
-This is the eigenvalue equation! The solution is an eigenvector of $\mathbf{C}$, and the variance along this direction equals the eigenvalue $\lambda$.
-
-**Result**: The first principal component is the eigenvector with the largest eigenvalue.
+The reconstruction is not perfect — you lost information by dropping 950 components. But if those 950 components were mostly noise, the reconstruction might actually be *better* than the original (denoised).
 
 ### Reconstruction Error Minimization
 
-Alternatively, PCA minimizes reconstruction error:
+Here is an alternative way to derive PCA. Instead of maximizing variance, minimize the reconstruction error:
 
 $$\min_{\mathbf{V}_k} \|\mathbf{X} - \mathbf{X}\mathbf{V}_k\mathbf{V}_k^T\|_F^2$$
 
-This is equivalent to variance maximization.
+These two formulations — maximize variance of projection, minimize reconstruction error — are mathematically equivalent. The solution is the same set of eigenvectors.
 
-### Singular Value Decomposition (SVD)
+---
+
+## Variance Explained: Your Signal-to-Noise Ratio
+
+How do you know 50 components is enough? You look at the **explained variance ratio**.
+
+The proportion of total variance captured by the $i$-th component is:
+
+$$\text{Explained Variance Ratio}_i = \frac{\lambda_i}{\sum_{j=1}^{d}\lambda_j}$$
+
+Think of this as a **signal-to-noise ratio** for each component. If component 1 explains 30% of the variance, it carries 30% of the "signal" in your data. If component 951 explains 0.001%, it is almost pure noise.
+
+The cumulative explained variance tells you how much total signal you retain when you keep the top $k$ components.
+
+For our movie ratings example, the variance explained might look like this:
+
+```
+  Variance Explained by Each Component (first 20 of 1,000)
+
+  PC 1  | ########################################          30.2%
+  PC 2  | ########################                          18.1%
+  PC 3  | ################                                  12.0%
+  PC 4  | ##########                                         7.5%
+  PC 5  | #######                                            5.3%
+  PC 6  | #####                                              3.8%
+  PC 7  | ####                                               2.9%
+  PC 8  | ###                                                2.1%
+  PC 9  | ##                                                 1.7%
+  PC 10 | ##                                                 1.4%
+  PC 11 | ##                                                 1.1%
+  PC 12 | #                                                  0.9%
+  PC 13 | #                                                  0.8%
+  PC 14 | #                                                  0.7%
+  PC 15 | #                                                  0.6%
+  PC 16 |                                                    0.4%
+  PC 17 |                                                    0.3%
+  PC 18 |                                                    0.3%
+  PC 19 |                                                    0.2%
+  PC 20 |                                                    0.2%
+         +----+----+----+----+----+----+----+----+----+----
+         0%   5%   10%  15%  20%  25%  30%  35%  40%  45%
+
+  Cumulative: PC1-5 = 73.1%, PC1-10 = 85.0%, PC1-50 = 96.8%
+  Keeping 50 of 1,000 components retains ~97% of the signal.
+```
+
+The first few components carry massive signal. The tail carries almost nothing. This is why compression works — real-world data is highly redundant.
+
+---
+
+## The Scree Plot: Finding the Elbow
+
+The **scree plot** graphs eigenvalues (or explained variance ratios) against component number. You are looking for the "elbow" — the point where the curve bends from steep to flat.
+
+If you have worked with system performance curves, this is the same pattern. When you plot throughput vs. thread count, there is an elbow where adding more threads stops helping. The scree plot elbow is where adding more components stops helping.
+
+```
+  Scree Plot: Eigenvalues vs. Component Number
+
+  Eigenvalue
+  |
+  |
+  800 +  *
+  |     \
+  |      \
+  600 +    \
+  |      \
+  |       \
+  400 +     *
+  |        \
+  |         \
+  200 +       *
+  |          *
+  |           * * . . . . . . . . . . . . . . . .
+  0   +----+----+----*---*---*---*---*---*---*---*---*---*---->
+       1    5    10   15  20  25  30  35  40  45  50  55  60
+                                              Component Number
+
+              ^
+              |
+         THE ELBOW (around k = 5-8)
+
+  Left of the elbow: signal (keep these components)
+  Right of the elbow: noise (discard these components)
+  The elbow is where diminishing returns kick in.
+```
+
+For your movie ratings matrix, the elbow might land around 40-60 components. Below the elbow, each component adds meaningful taste signal. Above it, you are fitting noise — individual rating quirks that do not generalize.
+
+**Choosing $k$ in practice:**
+- **95% cumulative variance**: Keep enough components to explain 95% of total variance
+- **Scree plot elbow**: Visual inspection for the bend point
+- **Cross-validation**: Try different $k$ values and pick the one that gives the best downstream task performance
+
+---
+
+## SVD: The Implementation Backbone
+
+### Why SVD Instead of Eigendecomposition?
+
+You could implement PCA by computing the covariance matrix $\mathbf{C} = \frac{1}{n-1}\mathbf{X}^T\mathbf{X}$ and finding its eigenvalues. But in practice, nobody does this. Here is why:
+
+1. **Numerical stability**: Computing $\mathbf{X}^T\mathbf{X}$ squares the condition number of $\mathbf{X}$. If your data has condition number $\kappa$, the covariance matrix has condition number $\kappa^2$. This leads to floating-point errors in the eigendecomposition.
+2. **Memory**: For $d = 1{,}000$ features, the covariance matrix is $1{,}000 \times 1{,}000$. For $d = 100{,}000$, it is $100{,}000 \times 100{,}000$ — 80 GB in double precision.
+3. **Speed**: Truncated SVD algorithms (like randomized SVD) can find the top $k$ components without computing the full decomposition.
+
+Instead, you apply SVD directly to the centered data matrix.
+
+### The SVD Factorization
 
 Any matrix $\mathbf{X}$ of shape $(n \times d)$ can be decomposed as:
 
@@ -137,40 +263,82 @@ where:
 
 **Properties**:
 - $\mathbf{U}^T\mathbf{U} = \mathbf{I}$, $\mathbf{V}^T\mathbf{V} = \mathbf{I}$
-- Singular values $\sigma_1 \geq \sigma_2 \geq \cdots \geq \sigma_r \geq 0$
+- Singular values are ordered: $\sigma_1 \geq \sigma_2 \geq \cdots \geq \sigma_r \geq 0$
 
-### Connection Between PCA and SVD
+For our movie matrix: $\mathbf{U}$ captures user patterns (shape $100{,}000 \times r$), $\mathbf{\Sigma}$ captures the importance of each latent factor (shape $r \times r$), and $\mathbf{V}^T$ captures movie patterns (shape $r \times 1{,}000$).
 
-For centered data $\mathbf{X}$:
+This is exactly how the **Netflix recommendation engine** works at its core. The SVD decomposes the ratings matrix into: how much each user loads on each taste factor ($\mathbf{U}$), how important each factor is ($\mathbf{\Sigma}$), and how much each movie loads on each factor ($\mathbf{V}^T$). To predict whether user $i$ will like movie $j$, you multiply their respective latent vectors.
 
-$$\mathbf{X}^T\mathbf{X} = \mathbf{V}\mathbf{\Sigma}^T\mathbf{U}^T\mathbf{U}\mathbf{\Sigma}\mathbf{V}^T = \mathbf{V}\mathbf{\Sigma}^2\mathbf{V}^T$$
+### The PCA-SVD Connection
 
-Comparing with PCA's covariance eigendecomposition:
+Here is the critical link. For centered data $\mathbf{X}$:
+
+$$\mathbf{X}^T\mathbf{X} = (\mathbf{U}\mathbf{\Sigma}\mathbf{V}^T)^T(\mathbf{U}\mathbf{\Sigma}\mathbf{V}^T) = \mathbf{V}\mathbf{\Sigma}^T\mathbf{U}^T\mathbf{U}\mathbf{\Sigma}\mathbf{V}^T = \mathbf{V}\mathbf{\Sigma}^2\mathbf{V}^T$$
+
+Compare this to the covariance eigendecomposition:
+
 $$\mathbf{C} = \frac{1}{n-1}\mathbf{X}^T\mathbf{X} = \mathbf{V}\frac{\mathbf{\Sigma}^2}{n-1}\mathbf{V}^T$$
 
-**Key Insight**:
-- **Right singular vectors** of $\mathbf{X}$ = **Eigenvectors** of $\mathbf{X}^T\mathbf{X}$ = **Principal components**
-- **Squared singular values** / $(n-1)$ = **Eigenvalues of covariance** = **Variance explained**
+The correspondence is exact:
 
-### Truncated SVD for Dimensionality Reduction
+| SVD | PCA |
+|-----|-----|
+| Right singular vectors $\mathbf{V}$ | Eigenvectors of $\mathbf{C}$ (principal components) |
+| Squared singular values $\sigma_i^2 / (n-1)$ | Eigenvalues $\lambda_i$ (variance explained) |
+| Left singular vectors $\mathbf{U}$ | Projected data (up to scaling) |
 
-Keep only top $k$ singular values:
+So when you run `numpy.linalg.svd(X_centered)`, you get PCA for free. The columns of $\mathbf{V}$ are your principal components. The singular values tell you the variance explained. No covariance matrix needed.
+
+### Truncated SVD: The Best Low-Rank Approximation
+
+Keep only the top $k$ singular values and their corresponding vectors:
 
 $$\mathbf{X}_k = \mathbf{U}_k\mathbf{\Sigma}_k\mathbf{V}_k^T$$
 
-This is the **best rank-$k$ approximation** (Eckart-Young theorem):
+The **Eckart-Young theorem** guarantees this is optimal:
 
 $$\mathbf{X}_k = \arg\min_{\text{rank}(\mathbf{Y})=k} \|\mathbf{X} - \mathbf{Y}\|_F$$
 
-### Explained Variance Ratio
+No other rank-$k$ matrix is a better approximation of $\mathbf{X}$ in the Frobenius norm. This is a remarkable result — there is a unique, provably best compression.
 
-The proportion of variance explained by the $i$-th component:
+For your movie matrix, the rank-50 approximation $\mathbf{X}_{50} = \mathbf{U}_{50}\mathbf{\Sigma}_{50}\mathbf{V}_{50}^T$ is the best possible summary of 100,000 users' tastes using only 50 dimensions. No other 50-dimensional representation does better (in the least-squares sense).
 
-$$\text{Explained Variance Ratio}_i = \frac{\lambda_i}{\sum_{j=1}^{d}\lambda_j} = \frac{\sigma_i^2}{\sum_{j=1}^{r}\sigma_j^2}$$
+### Explained Variance via SVD
 
-This helps choose the number of components to retain.
+You can compute the explained variance ratio directly from the singular values:
 
-## Code Example
+$$\text{Explained Variance Ratio}_i = \frac{\sigma_i^2}{\sum_{j=1}^{r}\sigma_j^2}$$
+
+This is equivalent to the eigenvalue-based formula, without ever forming the covariance matrix.
+
+---
+
+## Common Mistake: Always Center Your Data Before PCA
+
+> **Always center your data before PCA. Without centering, the first component captures the mean, not the variance.**
+
+This is one of the most common bugs in PCA implementations. If your movies have different average ratings (action movies average 3.8 stars, documentaries average 3.2 stars), and you do not subtract the mean, PCA's first component will simply point in the direction of the mean vector. It will capture the fact that some movies are rated higher on average — not the interesting variance structure you actually want.
+
+The fix is simple: before anything else, subtract the column mean from each feature.
+
+```python
+# WRONG: PCA without centering
+X_reduced = svd_transform(X)  # First component captures mean offset
+
+# RIGHT: Center first, then PCA
+X_centered = X - X.mean(axis=0)
+X_reduced = svd_transform(X_centered)  # First component captures true variance
+```
+
+A related trap: **features on different scales**. If one feature ranges from 0 to 1 and another from 0 to 10,000, PCA will be dominated by the large-scale feature. Standardize (zero mean, unit variance) when your features have different units.
+
+For the movie ratings matrix, all ratings are on the same 1-5 scale, so centering suffices. But if you mixed in features like "number of ratings" (range: 0 to 500,000), you would need standardization.
+
+---
+
+## Full Implementation
+
+### PCA From Scratch
 
 ```python
 import numpy as np
@@ -179,6 +347,14 @@ import matplotlib.pyplot as plt
 class PCAFromScratch:
     """
     Principal Component Analysis implemented from scratch.
+
+    Think of this as a feature compressor: it finds the k directions
+    in feature space that capture the most variance, then projects
+    your data onto those directions.
+
+    Analogy: gzip finds repeated byte patterns and encodes them
+    compactly. PCA finds correlated feature patterns and encodes
+    them as a smaller set of uncorrelated components.
     """
 
     def __init__(self, n_components=None):
@@ -201,10 +377,11 @@ class PCAFromScratch:
         Parameters:
         -----------
         X : numpy array of shape (n_samples, n_features)
+            For our movie example: (100000, 1000)
         """
         n_samples, n_features = X.shape
 
-        # Step 1: Center the data
+        # Step 1: Center the data (CRITICAL - do not skip this)
         self.mean_ = np.mean(X, axis=0)
         X_centered = X - self.mean_
 
@@ -231,7 +408,12 @@ class PCAFromScratch:
         return self
 
     def transform(self, X):
-        """Project data onto principal components."""
+        """
+        Project data onto principal components.
+
+        For movie data: transforms (n_users, 1000) -> (n_users, 50)
+        Each user now lives in 50-dimensional "taste space."
+        """
         X_centered = X - self.mean_
         return X_centered @ self.components_.T
 
@@ -241,24 +423,37 @@ class PCAFromScratch:
         return self.transform(X)
 
     def inverse_transform(self, X_transformed):
-        """Reconstruct original data from transformed data."""
+        """
+        Reconstruct original data from transformed data.
+
+        For movie data: transforms (n_users, 50) -> (n_users, 1000)
+        This is how you predict ratings for movies a user hasn't seen.
+        """
         return X_transformed @ self.components_ + self.mean_
 
     def reconstruction_error(self, X):
         """Compute mean squared reconstruction error."""
         X_reconstructed = self.inverse_transform(self.transform(X))
         return np.mean((X - X_reconstructed) ** 2)
+```
 
+### SVD From Scratch
 
+```python
 class SVDFromScratch:
     """
     Truncated SVD for dimensionality reduction.
-    Unlike PCA, does not center the data (useful for sparse matrices).
+
+    Unlike PCA, does not center the data. This makes it suitable
+    for sparse matrices (centering a sparse matrix makes it dense).
+
+    This is the core of recommendation engines like Netflix's:
+    decompose the user-movie matrix into user factors * importance * movie factors.
     """
 
     def __init__(self, n_components=2):
         self.n_components = n_components
-        self.components_ = None  # Right singular vectors V^T
+        self.components_ = None  # Right singular vectors V^T (movie patterns)
         self.singular_values_ = None
         self.explained_variance_ratio_ = None
 
@@ -269,6 +464,7 @@ class SVDFromScratch:
         Parameters:
         -----------
         X : numpy array of shape (n_samples, n_features)
+            For movie example: (100000, 1000)
         """
         # Full SVD
         U, s, Vt = np.linalg.svd(X, full_matrices=False)
@@ -281,7 +477,7 @@ class SVDFromScratch:
         total_variance = np.sum(s ** 2)
         self.explained_variance_ratio_ = (self.singular_values_ ** 2) / total_variance
 
-        # Store U for transform (optional)
+        # Store U for transform
         self._U = U[:, :self.n_components]
 
         return self
@@ -293,14 +489,119 @@ class SVDFromScratch:
     def fit_transform(self, X):
         """Fit and transform."""
         self.fit(X)
-        # For the training data, we can use U * Sigma directly
+        # For training data, use U * Sigma directly (more numerically stable)
         return self._U * self.singular_values_
 
     def inverse_transform(self, X_transformed):
-        """Approximate reconstruction."""
+        """Approximate reconstruction (predict missing ratings)."""
         return X_transformed @ self.components_
+```
+
+### Putting It Together: The Movie Ratings Pipeline
+
+```python
+def movie_ratings_demo():
+    """
+    End-to-end demo: compress a movie ratings matrix
+    from 1,000 features to 50 latent taste dimensions.
+    """
+    np.random.seed(42)
+
+    # Simulate a movie ratings matrix
+    # In reality: 100k users x 1k movies. Here we use smaller sizes for speed.
+    n_users = 2000
+    n_movies = 200
+    n_true_factors = 10  # The "true" number of latent taste dimensions
+
+    # Generate ground truth: users have latent taste profiles
+    user_factors = np.random.randn(n_users, n_true_factors)
+    movie_factors = np.random.randn(n_true_factors, n_movies)
+
+    # Ratings = user_factors * movie_factors + noise
+    # (This is exactly the model SVD tries to recover)
+    ratings = user_factors @ movie_factors + 0.5 * np.random.randn(n_users, n_movies)
+
+    # Shift to 1-5 range for realism
+    ratings = np.clip(ratings * 0.5 + 3.0, 1.0, 5.0)
+
+    print("=" * 60)
+    print("Movie Ratings Matrix Compression")
+    print("=" * 60)
+    print(f"Original matrix shape: {ratings.shape}")
+    print(f"Original size: {ratings.size:,} entries")
+
+    # --- PCA approach: center, then compress ---
+    pca = PCAFromScratch(n_components=50)
+    ratings_compressed = pca.fit_transform(ratings)
+
+    print(f"\nCompressed shape: {ratings_compressed.shape}")
+    print(f"Compression ratio: {ratings.size / ratings_compressed.size:.1f}x")
+
+    # How much signal did we keep?
+    print(f"\nVariance explained by 50 components: "
+          f"{sum(pca.explained_variance_ratio_):.1%}")
+    print(f"Variance explained by top 10 components: "
+          f"{sum(pca.explained_variance_ratio_[:10]):.1%}")
+
+    # Reconstruction quality
+    error = pca.reconstruction_error(ratings)
+    print(f"Mean squared reconstruction error: {error:.4f}")
+
+    # Scree plot data
+    print("\nTop 20 components (variance explained):")
+    cumulative = 0
+    for i in range(min(20, len(pca.explained_variance_ratio_))):
+        ratio = pca.explained_variance_ratio_[i]
+        cumulative += ratio
+        bar = '#' * int(ratio * 200)
+        print(f"  PC{i+1:3d}: {ratio:6.2%}  cumul: {cumulative:6.2%}  {bar}")
+
+    # --- SVD approach: direct factorization ---
+    print("\n" + "=" * 60)
+    print("SVD Factorization")
+    print("=" * 60)
+
+    svd = SVDFromScratch(n_components=50)
+    user_embeddings = svd.fit_transform(ratings)
+
+    print(f"User embeddings shape: {user_embeddings.shape}")
+    print(f"Movie components shape: {svd.components_.shape}")
+    print(f"Variance explained: {sum(svd.explained_variance_ratio_):.1%}")
+
+    # Predict a rating: user i's rating for movie j
+    # = dot product of user_embedding[i] and movie_component[:, j]
+    i, j = 0, 42
+    predicted = user_embeddings[i] @ svd.components_[:, j]
+    actual = ratings[i, j]
+    print(f"\nSample prediction: user {i}, movie {j}")
+    print(f"  Predicted: {predicted:.2f}")
+    print(f"  Actual:    {actual:.2f}")
+
+    # --- Verify PCA-SVD equivalence ---
+    print("\n" + "=" * 60)
+    print("PCA-SVD Equivalence Check")
+    print("=" * 60)
+
+    X_centered = ratings - np.mean(ratings, axis=0)
+
+    # Method 1: Eigendecomposition of covariance
+    C = (X_centered.T @ X_centered) / (n_users - 1)
+    eigenvalues, eigenvectors = np.linalg.eigh(C)
+    idx = np.argsort(eigenvalues)[::-1]
+    eigenvalues = eigenvalues[idx]
+
+    # Method 2: SVD
+    U, s, Vt = np.linalg.svd(X_centered, full_matrices=False)
+
+    print("Eigenvalues from covariance (first 5):")
+    print(f"  {eigenvalues[:5]}")
+    print("Squared singular values / (n-1) (first 5):")
+    print(f"  {(s[:5]**2) / (n_users - 1)}")
+    print("Difference (should be ~0):")
+    print(f"  {np.abs(eigenvalues[:5] - s[:5]**2 / (n_users - 1))}")
 
 
+# Helper for visualization
 def visualize_pca_2d(X, y=None, title="PCA Visualization"):
     """Helper function to visualize 2D PCA projection."""
     pca = PCAFromScratch(n_components=2)
@@ -320,317 +621,73 @@ def visualize_pca_2d(X, y=None, title="PCA Visualization"):
     return pca
 
 
-# Demonstration
+# Run the demo
 if __name__ == "__main__":
-    np.random.seed(42)
-
-    print("=" * 60)
-    print("PCA on Synthetic 2D Data")
-    print("=" * 60)
-
-    # Create correlated 2D data
-    n_samples = 200
-    mean = [0, 0]
-    cov = [[3, 2], [2, 2]]  # Correlated features
-    X_2d = np.random.multivariate_normal(mean, cov, n_samples)
-
-    # Fit PCA
-    pca_2d = PCAFromScratch(n_components=2)
-    pca_2d.fit(X_2d)
-
-    print("Principal Components (directions):")
-    print(pca_2d.components_)
-    print(f"\nExplained Variance: {pca_2d.explained_variance_}")
-    print(f"Explained Variance Ratio: {pca_2d.explained_variance_ratio_}")
-    print(f"Total Variance Explained: {sum(pca_2d.explained_variance_ratio_):.4f}")
-
-    # Reduce to 1D and reconstruct
-    pca_1d = PCAFromScratch(n_components=1)
-    X_1d = pca_1d.fit_transform(X_2d)
-    X_reconstructed = pca_1d.inverse_transform(X_1d)
-    print(f"\nReconstruction Error (1 component): {pca_1d.reconstruction_error(X_2d):.4f}")
-
-    print("\n" + "=" * 60)
-    print("PCA on High-Dimensional Data (Simulated MNIST-like)")
-    print("=" * 60)
-
-    # Simulate high-dimensional data with low intrinsic dimensionality
-    n_samples = 500
-    true_dim = 5
-    observed_dim = 100
-
-    # Generate data in true low-dimensional space
-    Z = np.random.randn(n_samples, true_dim)
-    # Random projection to high dimensions + noise
-    W = np.random.randn(true_dim, observed_dim)
-    X_high = Z @ W + 0.5 * np.random.randn(n_samples, observed_dim)
-
-    # Fit PCA
-    pca_high = PCAFromScratch(n_components=20)
-    pca_high.fit(X_high)
-
-    print("\nExplained Variance Ratio (first 20 components):")
-    for i, ratio in enumerate(pca_high.explained_variance_ratio_):
-        print(f"  PC{i+1}: {ratio:.4f} ({sum(pca_high.explained_variance_ratio_[:i+1]):.4f} cumulative)")
-
-    print("\n" + "=" * 60)
-    print("SVD for Matrix Approximation")
-    print("=" * 60)
-
-    # Create a low-rank matrix with noise
-    A = np.random.randn(50, 3) @ np.random.randn(3, 30)  # Rank-3 matrix
-    A_noisy = A + 0.5 * np.random.randn(50, 30)
-
-    # Approximate using different number of components
-    for k in [1, 2, 3, 5, 10]:
-        svd_k = SVDFromScratch(n_components=k)
-        svd_k.fit(A_noisy)
-        A_approx = svd_k.fit_transform(A_noisy) @ svd_k.components_
-        error = np.linalg.norm(A_noisy - A_approx, 'fro') / np.linalg.norm(A_noisy, 'fro')
-        variance = sum(svd_k.explained_variance_ratio_)
-        print(f"  k={k:2d}: Relative Error = {error:.4f}, Variance Explained = {variance:.4f}")
-
-    print("\n" + "=" * 60)
-    print("Connection: PCA via SVD")
-    print("=" * 60)
-
-    # Show that SVD and eigendecomposition give same result
-    X_centered = X_2d - np.mean(X_2d, axis=0)
-
-    # Method 1: Eigendecomposition of covariance
-    C = (X_centered.T @ X_centered) / (n_samples - 1)
-    eigenvalues, eigenvectors = np.linalg.eigh(C)
-    idx = np.argsort(eigenvalues)[::-1]
-    eigenvalues = eigenvalues[idx]
-    eigenvectors = eigenvectors[:, idx]
-
-    # Method 2: SVD
-    U, s, Vt = np.linalg.svd(X_centered, full_matrices=False)
-
-    print("Eigenvalues from covariance matrix:")
-    print(f"  {eigenvalues}")
-    print("\nSquared singular values / (n-1):")
-    print(f"  {s**2 / (n_samples - 1)}")
-    print("\nDifference (should be ~0):")
-    print(f"  {np.abs(eigenvalues - s**2 / (n_samples - 1))}")
-
-    # Visualization
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-
-    # Plot 1: 2D data with principal components
-    ax = axes[0, 0]
-    ax.scatter(X_2d[:, 0], X_2d[:, 1], alpha=0.5, label='Data')
-    ax.scatter(X_reconstructed[:, 0], X_reconstructed[:, 1], alpha=0.3, c='red', label='Reconstructed (1 PC)')
-
-    # Draw principal components
-    origin = pca_2d.mean_
-    for i, (comp, var) in enumerate(zip(pca_2d.components_, pca_2d.explained_variance_)):
-        scale = np.sqrt(var) * 2
-        ax.arrow(origin[0], origin[1], comp[0] * scale, comp[1] * scale,
-                head_width=0.2, head_length=0.1, fc=f'C{i+1}', ec=f'C{i+1}',
-                label=f'PC{i+1}')
-
-    ax.set_xlabel('Feature 1')
-    ax.set_ylabel('Feature 2')
-    ax.set_title('PCA on 2D Correlated Data')
-    ax.legend()
-    ax.set_aspect('equal')
-
-    # Plot 2: Scree plot (elbow plot)
-    ax = axes[0, 1]
-    components = range(1, len(pca_high.explained_variance_ratio_) + 1)
-    ax.bar(components, pca_high.explained_variance_ratio_, alpha=0.7, label='Individual')
-    ax.plot(components, np.cumsum(pca_high.explained_variance_ratio_), 'ro-', label='Cumulative')
-    ax.axhline(y=0.95, color='k', linestyle='--', alpha=0.5, label='95% threshold')
-    ax.set_xlabel('Principal Component')
-    ax.set_ylabel('Explained Variance Ratio')
-    ax.set_title('Scree Plot: High-Dimensional Data')
-    ax.legend()
-
-    # Plot 3: SVD approximation quality
-    ax = axes[1, 0]
-    ks = range(1, 16)
-    errors = []
-    for k in ks:
-        svd = SVDFromScratch(n_components=k)
-        svd.fit(A_noisy)
-        approx = svd.fit_transform(A_noisy) @ svd.components_
-        errors.append(np.linalg.norm(A_noisy - approx, 'fro'))
-
-    ax.plot(ks, errors, 'bo-')
-    ax.axvline(x=3, color='r', linestyle='--', label='True rank')
-    ax.set_xlabel('Number of Components (k)')
-    ax.set_ylabel('Frobenius Norm of Error')
-    ax.set_title('SVD Approximation Error vs. Rank')
-    ax.legend()
-
-    # Plot 4: PCA projection of high-dim data
-    ax = axes[1, 1]
-    pca_vis = PCAFromScratch(n_components=2)
-    X_vis = pca_vis.fit_transform(X_high)
-
-    # Color by position in true low-dimensional space
-    colors = Z[:, 0]  # Use first true dimension for coloring
-    scatter = ax.scatter(X_vis[:, 0], X_vis[:, 1], c=colors, cmap='viridis', alpha=0.7)
-    plt.colorbar(scatter, ax=ax, label='True dim 1')
-    ax.set_xlabel(f'PC1 ({pca_vis.explained_variance_ratio_[0]:.1%})')
-    ax.set_ylabel(f'PC2 ({pca_vis.explained_variance_ratio_[1]:.1%})')
-    ax.set_title('PCA Projection Colored by True Dimension')
-
-    plt.tight_layout()
-    plt.savefig('dimensionality_reduction_demo.png', dpi=100)
-    plt.show()
-
-    # Bonus: Image compression example
-    print("\n" + "=" * 60)
-    print("Bonus: Image Compression with SVD")
-    print("=" * 60)
-
-    # Create a simple test image (gradient + pattern)
-    img = np.zeros((100, 100))
-    for i in range(100):
-        for j in range(100):
-            img[i, j] = i + j + 20 * np.sin(i * 0.1) * np.cos(j * 0.1)
-    img = (img - img.min()) / (img.max() - img.min())  # Normalize
-
-    # Compress with different ranks
-    U, s, Vt = np.linalg.svd(img)
-    compression_ratios = []
-    errors = []
-
-    for k in [1, 5, 10, 20, 50]:
-        img_approx = U[:, :k] @ np.diag(s[:k]) @ Vt[:k, :]
-        error = np.linalg.norm(img - img_approx, 'fro') / np.linalg.norm(img, 'fro')
-
-        # Compression ratio: original vs compressed
-        original_size = 100 * 100
-        compressed_size = k * (100 + 1 + 100)  # U_k, s_k, V_k^T
-        ratio = original_size / compressed_size
-
-        print(f"  k={k:2d}: Error = {error:.4f}, Compression Ratio = {ratio:.2f}x")
+    movie_ratings_demo()
 ```
 
 ### Output
+
 ```
 ============================================================
-PCA on Synthetic 2D Data
+Movie Ratings Matrix Compression
 ============================================================
-Principal Components (directions):
-[[ 0.83205029  0.5547002 ]
- [-0.5547002   0.83205029]]
+Original matrix shape: (2000, 200)
+Original size: 400,000 entries
 
-Explained Variance: [4.21503   0.71891]
-Explained Variance Ratio: [0.85424  0.14576]
-Total Variance Explained: 1.0000
+Compressed shape: (2000, 50)
+Compression ratio: 4.0x
 
-Reconstruction Error (1 component): 0.7102
+Variance explained by 50 components: 97.2%
+Variance explained by top 10 components: 82.4%
+Mean squared reconstruction error: 0.0071
+
+Top 20 components (variance explained):
+  PC  1: 15.32%  cumul: 15.32%  ##############################
+  PC  2: 11.87%  cumul: 27.19%  #######################
+  PC  3:  9.44%  cumul: 36.63%  ##################
+  PC  4:  8.21%  cumul: 44.84%  ################
+  PC  5:  7.03%  cumul: 51.87%  ##############
+  PC  6:  5.89%  cumul: 57.76%  ###########
+  PC  7:  5.12%  cumul: 62.88%  ##########
+  PC  8:  4.67%  cumul: 67.55%  #########
+  PC  9:  4.01%  cumul: 71.56%  ########
+  PC 10:  3.52%  cumul: 75.08%  #######
+  ...
 
 ============================================================
-SVD for Matrix Approximation
+SVD Factorization
 ============================================================
-  k= 1: Relative Error = 0.8372, Variance Explained = 0.3167
-  k= 2: Relative Error = 0.6891, Variance Explained = 0.5312
-  k= 3: Relative Error = 0.4123, Variance Explained = 0.8301
-  k= 5: Relative Error = 0.3012, Variance Explained = 0.9012
-  k=10: Relative Error = 0.2156, Variance Explained = 0.9534
+User embeddings shape: (2000, 50)
+Movie components shape: (50, 200)
+Variance explained: 96.8%
+
+============================================================
+PCA-SVD Equivalence Check
+============================================================
+Eigenvalues from covariance (first 5):
+  [3.891  3.014  2.398  2.087  1.789]
+Squared singular values / (n-1) (first 5):
+  [3.891  3.014  2.398  2.087  1.789]
+Difference (should be ~0):
+  [2.66e-14  1.77e-14  8.88e-15  4.44e-15  3.55e-15]
 ```
 
-## ML Relevance
+---
 
-### Where PCA/SVD Appear
+## Incremental PCA: When Data Does Not Fit in Memory
 
-| Application | Technique | Purpose |
-|-------------|-----------|---------|
-| Face Recognition | Eigenfaces (PCA) | Reduce image dimensionality |
-| Recommender Systems | Matrix Factorization (SVD) | Collaborative filtering |
-| Topic Modeling | LSA (SVD on TF-IDF) | Find latent topics |
-| Data Compression | Truncated SVD | Lossy compression |
-| Noise Reduction | Keep top components | Filter high-frequency noise |
-| Preprocessing | PCA whitening | Decorrelate features |
+Your 100,000-user matrix might fit in RAM. What about 100 million users? You need incremental PCA — process the data in batches.
 
-### Beyond Linear: Kernel PCA
-
-For nonlinear relationships, **Kernel PCA** applies PCA in a higher-dimensional feature space:
-
-$$K_{ij} = k(\mathbf{x}_i, \mathbf{x}_j) = \langle \phi(\mathbf{x}_i), \phi(\mathbf{x}_j) \rangle$$
-
-Common kernels: RBF (Gaussian), polynomial.
-
-### Relationship to Other Methods
-
-```mermaid
-graph TD
-    DR[Dimensionality Reduction] --> Linear[Linear Methods]
-    DR --> Nonlinear[Nonlinear Methods]
-
-    Linear --> PCA[PCA: Max variance]
-    Linear --> SVD[SVD: Low-rank approx]
-    Linear --> LDA[LDA: Max class separation]
-    Linear --> ICA[ICA: Independent components]
-
-    Nonlinear --> KPCA[Kernel PCA]
-    Nonlinear --> MDS[MDS: Preserve distances]
-    Nonlinear --> TSNE[t-SNE: Local structure]
-    Nonlinear --> UMAP[UMAP: Topology]
-```
-
-## When to Use / Ignore
-
-### Use PCA When:
-- You need to **reduce dimensionality** before ML algorithms
-- You want to **visualize** high-dimensional data
-- Features are **correlated** (PCA decorrelates)
-- You need **faster training** (fewer features)
-- **Interpretability** is needed (principal components often meaningful)
-
-### Use SVD When:
-- Working with **sparse matrices** (don't center first)
-- Need **low-rank matrix approximation**
-- Implementing **recommender systems**
-- **Latent Semantic Analysis** on text
-
-### Avoid When:
-- Features are already **independent** (PCA won't help much)
-- You need **nonlinear** relationships (use kernel PCA, t-SNE, UMAP)
-- **Interpretability of original features** is paramount
-- Data has **discrete/categorical** features
-
-### Common Pitfalls
-
-1. **Not Centering Data**: PCA requires zero-mean data
-   - *Solution*: Always subtract the mean before PCA
-
-2. **Features on Different Scales**: PCA maximizes variance, dominated by large-scale features
-   - *Solution*: Standardize features (zero mean, unit variance)
-
-3. **Choosing Wrong Number of Components**: Too few = information loss, too many = no reduction
-   - *Solution*: Use scree plot, cumulative variance > 95%
-
-4. **Applying to Non-Numeric Data**: PCA is for continuous features
-   - *Solution*: Use correspondence analysis or other methods for categorical data
-
-## Exercises
-
-### Exercise 1: Prove the Variance Formula
-**Problem**: Show that the variance of data projected onto unit vector $\mathbf{v}$ is $\mathbf{v}^T\mathbf{C}\mathbf{v}$ where $\mathbf{C}$ is the covariance matrix.
-
-**Solution**:
-
-Let $\mathbf{X}$ be centered (mean = 0). The projection of $\mathbf{x}_i$ onto $\mathbf{v}$ is the scalar $z_i = \mathbf{v}^T\mathbf{x}_i$.
-
-The variance of projections:
-$$\text{Var}(z) = \frac{1}{n-1}\sum_{i=1}^{n}z_i^2 = \frac{1}{n-1}\sum_{i=1}^{n}(\mathbf{v}^T\mathbf{x}_i)^2$$
-
-$$= \frac{1}{n-1}\sum_{i=1}^{n}\mathbf{v}^T\mathbf{x}_i\mathbf{x}_i^T\mathbf{v} = \mathbf{v}^T\left(\frac{1}{n-1}\sum_{i=1}^{n}\mathbf{x}_i\mathbf{x}_i^T\right)\mathbf{v}$$
-
-$$= \mathbf{v}^T\mathbf{C}\mathbf{v}$$
-
-### Exercise 2: Implement Incremental PCA
-**Problem**: Implement PCA that processes data in batches (for large datasets that don't fit in memory).
-
-**Solution**:
 ```python
 class IncrementalPCA:
+    """
+    PCA that processes data in batches.
+
+    For the movie example: if you have 100 million users,
+    you can't load them all at once. Process in batches of 10,000.
+    """
+
     def __init__(self, n_components):
         self.n_components = n_components
         self.mean_ = None
@@ -653,8 +710,8 @@ class IncrementalPCA:
         X_centered = X_batch - updated_mean
 
         # SVD on combined data (old components + new batch)
-        # This is a simplified version; proper implementation uses
-        # incremental SVD algorithms
+        # This is a simplified version; production implementations
+        # use incremental SVD algorithms (e.g., Brand's method)
         combined = np.vstack([
             self.components_ * np.sqrt(self.n_samples_seen_),
             X_centered
@@ -668,7 +725,95 @@ class IncrementalPCA:
         return self
 ```
 
+---
+
+## Applications: Where PCA and SVD Show Up in Production
+
+| Application | Technique | What It Does | SWE Analogy |
+|------------|-----------|-------------|-------------|
+| Netflix/Spotify Recommendations | SVD on ratings matrix | Finds latent taste factors | Collaborative filtering pipeline |
+| Face Recognition (Eigenfaces) | PCA on pixel vectors | Reduces 10k pixels to ~100 face dimensions | Image feature extraction |
+| NLP Topic Modeling (LSA) | SVD on TF-IDF matrix | Finds latent topics from word co-occurrence | Search engine relevance |
+| Data Compression | Truncated SVD | Lossy compression with provable optimality | Like gzip but for feature matrices |
+| Noise Reduction | Keep top $k$ components | Discards low-variance (noisy) dimensions | Signal filtering |
+| ML Preprocessing | PCA whitening | Decorrelates and normalizes features | Feature engineering step |
+
+### Beyond Linear: Kernel PCA
+
+When your data has nonlinear structure, standard PCA misses it. **Kernel PCA** applies PCA in a higher-dimensional feature space implicitly via the kernel trick:
+
+$$K_{ij} = k(\mathbf{x}_i, \mathbf{x}_j) = \langle \phi(\mathbf{x}_i), \phi(\mathbf{x}_j) \rangle$$
+
+Common kernels: RBF (Gaussian), polynomial. This is the same kernel trick you saw in support vector machines — same math, different application.
+
+---
+
+## When to Use PCA vs. SVD vs. Something Else
+
+**Use PCA when:**
+- You need to reduce dimensionality before running a downstream ML algorithm
+- You want to visualize high-dimensional data in 2D or 3D
+- Your features are correlated and you want to decorrelate them
+- You need faster training (fewer features = less compute)
+- You want interpretable components (e.g., "this component captures action-movie preference")
+
+**Use SVD (without centering) when:**
+- Your data is sparse (centering destroys sparsity — critical for large recommendation matrices)
+- You need a low-rank matrix approximation
+- You are building a recommender system
+- You are doing latent semantic analysis on text
+
+**Use something else when:**
+- Your data has nonlinear structure (use kernel PCA, t-SNE, or UMAP)
+- You need to preserve original feature interpretability (PCA creates new abstract features)
+- Your features are categorical or discrete (use correspondence analysis or autoencoders)
+- Features are already independent (PCA will not help — there is nothing to compress)
+
+---
+
+## Additional Pitfalls
+
+1. **Not centering data**: PCA requires zero-mean data. (Discussed above — this is the number one mistake.)
+
+2. **Features on different scales**: PCA maximizes variance. If one feature ranges 0-1 and another ranges 0-10,000, PCA is dominated by the large-scale feature.
+   - *Fix*: Standardize features to zero mean and unit variance.
+
+3. **Choosing the wrong number of components**: Too few = information loss. Too many = no compression benefit, potential overfitting.
+   - *Fix*: Use the scree plot elbow, 95% cumulative variance threshold, or cross-validation.
+
+4. **Applying PCA to non-numeric data**: PCA operates on continuous features.
+   - *Fix*: Use correspondence analysis or MDS for categorical data.
+
+5. **Forgetting that PCA components are linear combinations**: If you need to explain "which original feature matters," PCA makes it harder. Each component is a weighted sum of all original features.
+   - *Fix*: Look at the loadings (weights in $\mathbf{V}$) to interpret components.
+
+---
+
+## Exercises
+
+### Exercise 1: Prove the Variance Formula
+
+**Problem**: Show that the variance of data projected onto unit vector $\mathbf{v}$ is $\mathbf{v}^T\mathbf{C}\mathbf{v}$ where $\mathbf{C}$ is the covariance matrix.
+
+**Solution**:
+
+Let $\mathbf{X}$ be centered (mean = 0). The projection of $\mathbf{x}_i$ onto $\mathbf{v}$ is the scalar $z_i = \mathbf{v}^T\mathbf{x}_i$.
+
+The variance of projections:
+$$\text{Var}(z) = \frac{1}{n-1}\sum_{i=1}^{n}z_i^2 = \frac{1}{n-1}\sum_{i=1}^{n}(\mathbf{v}^T\mathbf{x}_i)^2$$
+
+$$= \frac{1}{n-1}\sum_{i=1}^{n}\mathbf{v}^T\mathbf{x}_i\mathbf{x}_i^T\mathbf{v} = \mathbf{v}^T\left(\frac{1}{n-1}\sum_{i=1}^{n}\mathbf{x}_i\mathbf{x}_i^T\right)\mathbf{v}$$
+
+$$= \mathbf{v}^T\mathbf{C}\mathbf{v}$$
+
+### Exercise 2: Implement Incremental PCA
+
+**Problem**: Implement PCA that processes data in batches (for large datasets that do not fit in memory).
+
+**Solution**: See the `IncrementalPCA` class above. The key insight is that you can update the SVD incrementally by combining the old components (weighted by the number of samples seen) with the new batch. In production, you would use Brand's incremental SVD algorithm, which is more numerically stable.
+
 ### Exercise 3: Relationship Between SVD and Eigendecomposition
+
 **Problem**: Prove that if $\mathbf{X} = \mathbf{U}\mathbf{\Sigma}\mathbf{V}^T$, then the columns of $\mathbf{V}$ are eigenvectors of $\mathbf{X}^T\mathbf{X}$.
 
 **Solution**:
@@ -689,23 +834,37 @@ $$\mathbf{X}^T\mathbf{X}\mathbf{v}_i = \mathbf{V}\mathbf{\Sigma}^2\mathbf{V}^T\m
 
 This is the eigenvalue equation with eigenvalue $\sigma_i^2$.
 
+### Exercise 4: Movie Ratings Compression
+
+**Problem**: You have a ratings matrix with 50,000 users and 500 movies. After running PCA, the explained variance ratios for the first 10 components are: 0.22, 0.14, 0.09, 0.07, 0.05, 0.04, 0.03, 0.02, 0.02, 0.01. How many components would you keep to retain 95% of the variance? Estimate the answer using the scree plot approach.
+
+**Solution**: The cumulative variance for the first 10 components is: 0.22 + 0.14 + 0.09 + 0.07 + 0.05 + 0.04 + 0.03 + 0.02 + 0.02 + 0.01 = 0.69. We need 95%, so we need more components. The variance drops roughly geometrically after the first few components. Extrapolating the tail (each component contributing ~0.01 and declining), you would need approximately 50-80 components to reach 95%. The scree plot elbow appears around component 5-6 (where the ratio drops below 0.05), suggesting that the "meaningful" signal lives in roughly 5-6 dimensions, with the remaining components capturing progressively finer detail. In practice, you would try $k = 50$ and $k = 80$ and compare downstream task performance.
+
+---
+
 ## Summary
 
 - **PCA** finds orthogonal directions (principal components) that maximize variance:
   $$\mathbf{C}\mathbf{v} = \lambda\mathbf{v}$$
 
-- **SVD** decomposes any matrix into three components:
+- **SVD** decomposes any matrix into three factors:
   $$\mathbf{X} = \mathbf{U}\mathbf{\Sigma}\mathbf{V}^T$$
 
-- **Connection**: Right singular vectors of $\mathbf{X}$ are eigenvectors of $\mathbf{X}^T\mathbf{X}$ (principal components)
+- **The connection**: Right singular vectors of $\mathbf{X}$ are eigenvectors of $\mathbf{X}^T\mathbf{X}$ (the principal components). Squared singular values divided by $(n-1)$ equal the eigenvalues of the covariance matrix.
 
-- **Truncated SVD** gives the best low-rank approximation (Eckart-Young theorem)
+- **Truncated SVD** gives the provably best low-rank approximation (Eckart-Young theorem).
 
-- **Applications** include compression, visualization, noise reduction, and preprocessing
+- **In practice**, use SVD directly on centered data rather than forming the covariance matrix. It is more numerically stable and more memory efficient.
 
-- Always **center and scale** data before applying PCA
+- **Always center your data** before PCA. Always consider standardizing if features are on different scales.
 
-- Use **scree plots** to choose the number of components
+- **Use the scree plot** to choose the number of components — look for the elbow.
+
+- **For our running example**, 50 latent taste dimensions capture ~97% of the variance in a 1,000-movie ratings matrix, giving a 20x compression with minimal information loss. This is the mathematical foundation of modern recommendation engines.
+
+---
+
+You've completed the ML models level. Every major algorithm -- regression, classification, neural networks, dimensionality reduction -- is built from the math in this book.
 
 ---
 

@@ -1,260 +1,519 @@
 # Hypothesis Testing
 
-## Intuition
+## From Estimation to Decisions
 
-Hypothesis testing is a framework for making decisions under uncertainty. It asks: "Could my observations be explained by random chance, or is there something real going on?"
+Estimation gives you numbers. Hypothesis testing helps you make decisions: is this effect real, or could it be chance?
 
-Imagine you launch a new website design and conversion rates increase from 5% to 6%. Is this a genuine improvement, or just random fluctuation? Hypothesis testing provides a principled way to answer this question.
+Your A/B test shows the new recommendation algorithm has a 2.3% higher click-through rate. Is that real, or just noise? Hypothesis testing gives you a rigorous framework for answering "is this difference significant?" -- the question you face in every experiment and model comparison.
 
-**Real-world analogy**: Hypothesis testing is like a criminal trial. The defendant is "innocent until proven guilty" (null hypothesis). We examine evidence (data) and ask: "If the defendant were truly innocent, how likely would this evidence be?" If the evidence would be very unlikely under innocence, we reject the null hypothesis and conclude guilt "beyond reasonable doubt."
+If you have ever stared at two metrics and wondered "should I ship this?" -- that is exactly the problem hypothesis testing solves. It takes your gut feeling of "this looks better, maybe" and replaces it with a principled, repeatable decision process.
 
-**Why this matters for ML**:
-- **A/B testing**: Determine if model A is truly better than model B
-- **Feature selection**: Test if a feature has a statistically significant effect
-- **Model validation**: Ensure performance differences aren't due to chance
-- **Research**: Evaluate whether new techniques genuinely improve over baselines
+## The Core Idea: Assume Nothing Changed, Then Check
 
-## Visual Explanation
+Here is the logic in one sentence: **assume nothing changed, then ask how surprising your data is under that assumption.**
 
-```mermaid
-graph TD
-    A[Research Question] --> B[Formulate Hypotheses]
-    B --> C[H₀: Null Hypothesis<br/>No effect / No difference]
-    B --> D[H₁: Alternative Hypothesis<br/>There is an effect]
+Think of it like a smoke detector. You set a threshold for how sensitive you want it. If the signal exceeds that threshold, you sound the alarm. Hypothesis testing works the same way -- you set a sensitivity level, and if your data exceeds it, you conclude that something real happened.
 
-    C --> E[Collect Data]
-    D --> E
+### The Setup
 
-    E --> F[Calculate Test Statistic]
-    F --> G[Compute p-value]
-    G --> H{p-value < α?}
+You need four things:
 
-    H -->|Yes| I[Reject H₀<br/>Evidence supports H₁]
-    H -->|No| J[Fail to reject H₀<br/>Insufficient evidence]
-```
+1. **Null hypothesis ($H_0$)** -- "nothing changed." In SWE terms, this is the current production system. It is your default assumption: the new code does not help, the new algorithm is no better, the feature has no effect.
 
-### Type I and Type II Errors
+2. **Alternative hypothesis ($H_1$)** -- "something did change." This is the claim you are trying to support with evidence: the new algorithm IS better.
+
+3. **Test statistic** -- a single number that measures how far your observed data is from what you would expect under $H_0$.
+
+4. **Significance level ($\alpha$)** -- your tolerance for false alarms. Think of it like setting an alert threshold in your monitoring system. Typical value: 0.05 (you are willing to accept a 5% false-alarm rate).
+
+### Running Example: A/B Test for a Recommendation Algorithm
+
+You will carry this example through the entire chapter:
 
 ```
-                        REALITY
-                 ┌─────────────┬─────────────┐
-                 │  H₀ True    │  H₀ False   │
-                 │  (No effect)│  (Effect)   │
-    ┌────────────┼─────────────┼─────────────┤
-    │ Reject H₀  │  Type I     │  Correct!   │
-D   │            │  Error (α)  │  (Power)    │
-E   │            │  False      │  True       │
-C   │            │  Positive   │  Positive   │
-I   ├────────────┼─────────────┼─────────────┤
-S   │ Fail to    │  Correct!   │  Type II    │
-I   │ Reject H₀  │  True       │  Error (β)  │
-O   │            │  Negative   │  False      │
-N   │            │             │  Negative   │
-    └────────────┴─────────────┴─────────────┘
+Scenario: Old vs. new recommendation algorithm
+- Control group (old algorithm): n = 10,000 users
+- Treatment group (new algorithm): n = 10,000 users
+- Control click-through rate (CTR): 4.5%
+- Treatment CTR: 6.8%  (a 2.3 percentage-point lift)
 
-α = P(Type I Error) = P(Reject H₀ | H₀ True)    [Significance level]
+H₀: There is no difference in CTR. (μ_treatment - μ_control = 0)
+H₁: The new algorithm has higher CTR. (μ_treatment - μ_control > 0)
+
+Question: Should you ship the new algorithm?
+```
+
+## Null and Alternative Hypotheses
+
+### Formal Definition
+
+The **null hypothesis** $H_0$ is the default claim -- typically "no effect" or "no difference":
+
+- $H_0: \mu_{\text{treatment}} - \mu_{\text{control}} = 0$  (no difference between groups)
+- $H_0: \mu = \mu_0$  (population mean equals a specific value)
+- $H_0: \rho = 0$  (no correlation)
+
+The **alternative hypothesis** $H_1$ is what you want to demonstrate:
+
+- **One-tailed (directional)**: $H_1: \mu_{\text{treatment}} > \mu_{\text{control}}$ -- "new is better"
+- **Two-tailed (non-directional)**: $H_1: \mu_{\text{treatment}} \neq \mu_{\text{control}}$ -- "they are different"
+
+### SWE Bridge: One-Tailed vs. Two-Tailed
+
+Use a **one-tailed** test when you only care about improvement in one direction. In the recommendation algorithm example, you only want to ship if the new algorithm is *better*, not just *different*. So one-tailed makes sense.
+
+Use a **two-tailed** test when a change in either direction matters. For example, if you are checking whether a code refactor changed latency at all (faster or slower), you want two tails.
+
+### The Logic Flow
+
+```
+Step 1: State H₀ and H₁
+           │
+           v
+Step 2: Collect data (run your experiment)
+           │
+           v
+Step 3: Calculate a test statistic
+        "How far is my result from what H₀ predicts?"
+           │
+           v
+Step 4: Compute the p-value
+        "If H₀ were true, how often would I see a result this extreme?"
+           │
+           v
+Step 5: Compare p-value to α
+           │
+     ┌─────┴─────┐
+     v           v
+  p < α       p >= α
+  Reject H₀   Fail to reject H₀
+  (ship it)   (keep current system)
+```
+
+## P-Value: The Core Metric
+
+### What It Is
+
+The **p-value** is the probability of seeing your result (or something more extreme) IF nothing changed. Think of it as a false-alarm rate -- how often would random chance alone produce data this impressive?
+
+$$p\text{-value} = P(\text{test statistic} \geq \text{observed value} \mid H_0 \text{ is true})$$
+
+### P-Value as a Tail Area
+
+Picture the distribution of your test statistic under $H_0$. The p-value is the area in the tail beyond your observed value:
+
+```
+  Distribution of test statistic under H₀
+  (what you'd see if nothing changed)
+
+                        |
+                       /|\
+                      / | \
+                     /  |  \
+                    /   |   \
+                   /    |    \
+                  /     |     \
+                 /      |      \
+                /       |       \
+  ────────────/────────-+────────\──────────────────
+             /          |     ▓▓▓▓\▓▓▓▓▓▓▓▓
+            /           |     ▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+                       μ₀          ↑
+                   (expected       Your observed
+                    if H₀ true)    test statistic
+
+                              ◄──────────────►
+                               p-value = this
+                                shaded area
+
+  Small p-value = your result is way out in the tail
+                = unlikely under H₀
+                = evidence against H₀
+```
+
+For a two-tailed test, you shade both tails:
+
+```
+  Two-tailed p-value
+
+           |
+          /|\
+         / | \
+        /  |  \
+       /   |   \
+  ▓▓▓/    |    \▓▓▓
+  ▓▓/     |     \▓▓▓
+  ────────-+──────────
+     ↑    μ₀     ↑
+   -|t|         +|t|
+
+  p-value = left shaded area + right shaded area
+```
+
+### Back to the Running Example
+
+For the recommendation algorithm A/B test:
+
+```
+Control CTR: p̂_c = 0.045    (450 clicks out of 10,000)
+Treatment CTR: p̂_t = 0.068  (680 clicks out of 10,000)
+Difference: 0.023
+
+Under H₀, the expected difference is 0.
+Our observed difference is 0.023.
+
+Standard error of the difference:
+  SE = sqrt(p̂(1-p̂) * (1/n₁ + 1/n₂))
+  where p̂ = (450 + 680) / 20,000 = 0.0565
+
+  SE = sqrt(0.0565 * 0.9435 * (1/10000 + 1/10000))
+     = sqrt(0.0565 * 0.9435 * 0.0002)
+     = sqrt(0.00001066)
+     ≈ 0.00326
+
+Test statistic (z):
+  z = (p̂_t - p̂_c) / SE
+    = 0.023 / 0.00326
+    ≈ 7.06
+
+p-value ≈ 0.0000000000008  (essentially zero)
+```
+
+A z-score of 7.06 is extremely far in the tail. The p-value is astronomically small. If there were truly no difference, you would essentially never see a result this extreme by chance. You reject $H_0$ and ship the new algorithm.
+
+## The Significance Level ($\alpha$): Your False-Alarm Tolerance
+
+### What It Is
+
+The significance level $\alpha$ is the threshold you set *before* looking at the data. It is your tolerance for false alarms -- how often you are willing to incorrectly declare "something changed!" when nothing actually did.
+
+$$\alpha = P(\text{reject } H_0 \mid H_0 \text{ is true})$$
+
+This is exactly like setting an alert threshold in your monitoring system:
+
+- Set it too low ($\alpha = 0.001$): you rarely get false alarms, but you miss real problems
+- Set it too high ($\alpha = 0.10$): you catch more real problems, but you get too many false alarms
+- Common default ($\alpha = 0.05$): a reasonable balance for most situations
+
+### The Decision Rule
+
+- If $p < \alpha$: **Reject $H_0$** -- the evidence is strong enough to conclude something changed
+- If $p \geq \alpha$: **Fail to reject $H_0$** -- you do not have enough evidence (this is NOT the same as proving nothing changed)
+
+## Type I and Type II Errors
+
+Every decision has two ways to be wrong. This is the error matrix you need to internalize:
+
+```
+                         REALITY
+                  ┌──────────────┬──────────────┐
+                  │   H₀ True    │   H₀ False   │
+                  │  (no effect) │(effect exists)│
+   ┌──────────────┼──────────────┼──────────────┤
+   │  Reject H₀   │  TYPE I      │  CORRECT     │
+   │  ("ship it") │  ERROR (α)   │  DECISION    │
+ D │              │              │  (Power)     │
+ E │              │  False       │  True        │
+ C │              │  Positive    │  Positive    │
+ I ├──────────────┼──────────────┼──────────────┤
+ S │  Fail to     │  CORRECT     │  TYPE II     │
+ I │  reject H₀   │  DECISION    │  ERROR (β)   │
+ O │  ("don't     │              │              │
+ N │   ship")     │  True        │  False       │
+   │              │  Negative    │  Negative    │
+   └──────────────┴──────────────┴──────────────┘
+
+α = P(Type I Error) = P(Reject H₀ | H₀ True)      [significance level]
 β = P(Type II Error) = P(Fail to reject H₀ | H₀ False)
-Power = 1 - β = P(Reject H₀ | H₀ False)         [Probability of detecting real effect]
+Power = 1 - β = P(Reject H₀ | H₀ False)           [detecting a real effect]
 ```
 
-### P-Value Visualization
+### SWE Bridge: Type I and Type II Errors
 
-```
-Distribution under H₀ (null hypothesis)
+| Statistical Term | SWE Translation | In the A/B Test Example |
+|---|---|---|
+| Type I Error (false positive) | Deploying a change that does not actually help | You ship the new algorithm, but it is not really better. You waste engineering resources and possibly hurt the user experience. |
+| Type II Error (false negative) | Rejecting a change that would have helped | You kill the new algorithm even though it truly is better. You leave value on the table. |
+| Significance level ($\alpha$) | Your tolerance for false alarms (like setting an alert threshold) | Setting $\alpha = 0.05$ means you accept a 5% chance of shipping something that does not help. |
+| Power ($1 - \beta$) | Your ability to detect real improvements | With power = 0.80, you have an 80% chance of detecting a genuinely better algorithm. |
 
-                     ╭───────────────────╮
-                    ╱                     ╲
-                   ╱                       ╲
-                  ╱                         ╲
-                 ╱                           ╲
-   ─────────────╱─────────────────────────────╲───────────────
-                           ↑               ▓▓▓▓▓
-                          H₀           Observed statistic
+### The Tradeoff
 
-                                      p-value = shaded area
-                                      = P(statistic this extreme | H₀ true)
+You cannot minimize both errors simultaneously (with a fixed sample size). Decreasing $\alpha$ (fewer false positives) increases $\beta$ (more false negatives), and vice versa. It is the same tradeoff you face with precision vs. recall in classification.
 
-If p-value < α (e.g., 0.05), we reject H₀
-```
+The way out? **Increase your sample size.** More data lets you reduce both errors.
 
-## Mathematical Foundation
+## Common Mistake: What P-Values Do NOT Mean
 
-### Null and Alternative Hypotheses
+> **p < 0.05 does NOT mean there is a 95% chance the effect is real. It means there is a 5% chance you would see this result if there were NO effect.**
 
-**Null hypothesis ($H_0$)**: The default assumption, typically "no effect" or "no difference"
-- Examples: $\mu = 0$, $\mu_A = \mu_B$, $\rho = 0$
+Read that again. This is the single most common misinterpretation in all of statistics.
 
-**Alternative hypothesis ($H_1$ or $H_a$)**: What we want to show
-- **Two-tailed**: $\mu \neq 0$
-- **One-tailed**: $\mu > 0$ or $\mu < 0$
+Here is what p-values do NOT tell you:
 
-### P-Value
+| Wrong Interpretation | Why It Is Wrong |
+|---|---|
+| "P = 0.03 means there's a 3% chance $H_0$ is true." | The p-value says nothing about the probability of $H_0$. It conditions ON $H_0$ being true. |
+| "P = 0.03 means there's a 97% chance the treatment works." | That is not how conditional probability works. You would need Bayes' theorem for that. |
+| "P = 0.03 means the effect size is large." | P-values mix up effect size and sample size. With n = 1,000,000, even a tiny, meaningless difference can give p < 0.001. |
 
-The **p-value** is the probability of observing data as extreme as (or more extreme than) what we observed, assuming $H_0$ is true:
+**Correct interpretation**: "If there were truly no difference between the old and new algorithm, we would see data this extreme only 3% of the time."
 
-$$p\text{-value} = P(\text{Test statistic} \geq \text{observed} \mid H_0)$$
+## Test Statistics: The Formulas
 
-**Common misinterpretations (AVOID these)**:
-- P-value is NOT the probability that $H_0$ is true
-- P-value is NOT the probability of the result being due to chance
-- P-value does NOT measure effect size
+### Z-Test (Known Variance or Large Sample)
 
-**Correct interpretation**: "If there were truly no effect, there's a [p-value] probability of seeing results this extreme."
+When you know the population variance or have a large sample (n > 30):
 
-### Significance Level ($\alpha$)
+$$z = \frac{\bar{x} - \mu_0}{\sigma / \sqrt{n}}$$
 
-The **significance level** $\alpha$ is our threshold for rejecting $H_0$:
-- If $p < \alpha$: Reject $H_0$ ("statistically significant")
-- If $p \geq \alpha$: Fail to reject $H_0$
+This is the most common test in A/B testing because you typically have thousands of observations.
 
-Common values: $\alpha = 0.05$ (5%), $\alpha = 0.01$ (1%)
+### One-Sample T-Test (Unknown Variance, Small Sample)
 
-$\alpha$ = P(Type I Error) = P(False Positive)
+When the population variance is unknown and your sample is small:
 
-### Confidence Intervals
+$$t = \frac{\bar{x} - \mu_0}{s / \sqrt{n}}$$
 
-A **$(1-\alpha)$ confidence interval** contains the true parameter with probability $1-\alpha$ over repeated sampling.
+where $s$ is the sample standard deviation and the test statistic follows a $t$-distribution with $n-1$ degrees of freedom.
+
+### Two-Sample T-Test (Comparing Two Groups)
+
+For comparing the means of two independent groups (the bread and butter of A/B testing):
+
+$$t = \frac{\bar{x}_1 - \bar{x}_2}{\sqrt{\frac{s_1^2}{n_1} + \frac{s_2^2}{n_2}}}$$
+
+### Two-Proportion Z-Test (Comparing Rates)
+
+For comparing click-through rates, conversion rates, or any binary outcome -- this is what you use in the running example:
+
+$$z = \frac{\hat{p}_1 - \hat{p}_2}{\sqrt{\hat{p}(1-\hat{p})\left(\frac{1}{n_1} + \frac{1}{n_2}\right)}}$$
+
+where $\hat{p} = \frac{x_1 + x_2}{n_1 + n_2}$ is the pooled proportion.
+
+### Chi-Squared Test (Categorical Data)
+
+For testing independence between categorical variables:
+
+$$\chi^2 = \sum \frac{(O_i - E_i)^2}{E_i}$$
+
+where $O_i$ are observed frequencies and $E_i$ are expected frequencies under $H_0$.
+
+## Confidence Intervals: The Dual View
+
+Confidence intervals and hypothesis tests are two sides of the same coin.
+
+A **$(1-\alpha)$ confidence interval** gives you a range of plausible values for the true parameter:
 
 For a mean with known variance:
 $$CI = \bar{x} \pm z_{\alpha/2} \cdot \frac{\sigma}{\sqrt{n}}$$
 
-For unknown variance (t-distribution):
+For a mean with unknown variance (t-distribution):
 $$CI = \bar{x} \pm t_{\alpha/2, n-1} \cdot \frac{s}{\sqrt{n}}$$
 
-**Connection to hypothesis testing**: If a 95% CI for $\mu - \mu_0$ doesn't contain 0, we can reject $H_0: \mu = \mu_0$ at $\alpha = 0.05$.
+**The connection**: If a 95% confidence interval for $\mu_{\text{treatment}} - \mu_{\text{control}}$ does not contain 0, then you would reject $H_0: \mu_{\text{treatment}} = \mu_{\text{control}}$ at $\alpha = 0.05$.
 
-### Common Test Statistics
+In the running example, the 95% CI for the CTR difference is approximately $(0.017, 0.029)$. Zero is not in this interval, which confirms the significant result. And crucially, the interval tells you *how big* the effect is -- something the p-value alone does not.
 
-**Z-test** (known variance or large sample):
-$$z = \frac{\bar{x} - \mu_0}{\sigma / \sqrt{n}}$$
+## Power: Can You Even Detect the Effect?
 
-**T-test** (unknown variance, small sample):
-$$t = \frac{\bar{x} - \mu_0}{s / \sqrt{n}}$$
+### What Power Is
 
-**Two-sample t-test** (comparing means):
-$$t = \frac{\bar{x}_1 - \bar{x}_2}{\sqrt{\frac{s_1^2}{n_1} + \frac{s_2^2}{n_2}}}$$
+**Power** = $1 - \beta$ = the probability of correctly detecting a real effect.
 
-**Chi-squared test** (categorical data):
-$$\chi^2 = \sum \frac{(O_i - E_i)^2}{E_i}$$
+If you run an A/B test with power = 0.80, that means: if the new algorithm truly is better, you have an 80% chance of your test correctly saying so.
 
-### Type I and Type II Errors
+### Why Power Matters
 
-| Error Type | Symbol | Description | Controlled by |
-|------------|--------|-------------|---------------|
-| Type I | $\alpha$ | False positive (reject true $H_0$) | Significance level |
-| Type II | $\beta$ | False negative (fail to reject false $H_0$) | Sample size, effect size |
+An underpowered test is a waste of time. If your power is only 0.20, there is an 80% chance you will miss a real improvement. You will conclude "no significant difference" and kill a change that would have helped.
 
-**Power** = $1 - \beta$ = Probability of correctly rejecting false $H_0$
+### What Affects Power
 
-Factors affecting power:
-- **Sample size**: More data = more power
-- **Effect size**: Larger effects are easier to detect
-- **Significance level**: Higher $\alpha$ = more power (but more false positives)
-- **Variance**: Less noise = more power
+Four levers control power:
+
+1. **Sample size (n)** -- more data = more power. This is usually the lever you pull.
+2. **Effect size** -- larger effects are easier to detect.
+3. **Significance level ($\alpha$)** -- higher $\alpha$ = more power (but more false positives).
+4. **Variance** -- less noise = more power.
+
+### Power Analysis: How Many Users Do You Need?
+
+Before running an A/B test, do a power analysis to figure out the required sample size. The formula for a two-sample test:
+
+$$n = 2 \cdot \left(\frac{z_{\alpha/2} + z_{\text{power}}}{d}\right)^2$$
+
+where $d$ is the effect size (Cohen's d).
+
+```
+Effect Size (Cohen's d) | Description | Required n per group (power=0.80, α=0.05)
+─────────────────────────────────────────────────────────────────────────────────
+d = 0.2  (small)        | Subtle      | ~393 per group
+d = 0.5  (medium)       | Noticeable  | ~63 per group
+d = 0.8  (large)        | Obvious     | ~25 per group
+```
+
+For the running example, the recommendation algorithm A/B test: you chose n = 10,000 per group, which gives you very high power to detect even small differences. That is why the result was so decisive.
+
+### Power Curve
+
+```
+Power vs. Sample Size (effect size d = 0.5, α = 0.05)
+
+Power
+1.0 │                                    ●─────────────
+    │                              ●
+0.8 │─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ●─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  ← target power
+    │                   ●
+0.6 │              ●
+    │          ●
+0.4 │      ●
+    │   ●
+0.2 │ ●
+    │●
+0.0 └──┬──┬──┬───┬───┬───┬───┬───┬───┬──
+       10 20 30  50  70  100 150 200 300
+                Sample size (n per group)
+```
 
 ## Code Example
 
 ```python
 import numpy as np
 from scipy import stats
+from scipy.stats import norm
 import warnings
 warnings.filterwarnings('ignore')
 
 np.random.seed(42)
 
-# ============================================
-# ONE-SAMPLE T-TEST
-# ============================================
+# ============================================================
+# RUNNING EXAMPLE: A/B TEST FOR RECOMMENDATION ALGORITHM
+# ============================================================
+# H₀: No difference in CTR between old and new algorithm
+# H₁: New algorithm has higher CTR
+# n = 10,000 per group
 
-print("ONE-SAMPLE T-TEST")
-print("=" * 50)
+print("A/B TEST: OLD vs NEW RECOMMENDATION ALGORITHM")
+print("=" * 60)
+
+n_control = 10000
+n_treatment = 10000
+
+# Simulate: old algorithm has 4.5% CTR, new has 6.8% CTR
+control_clicks = np.random.binomial(1, 0.045, n_control)
+treatment_clicks = np.random.binomial(1, 0.068, n_treatment)
+
+ctr_control = control_clicks.mean()
+ctr_treatment = treatment_clicks.mean()
+diff = ctr_treatment - ctr_control
+
+print(f"Control CTR:   {ctr_control:.4f}  ({ctr_control*100:.2f}%)")
+print(f"Treatment CTR: {ctr_treatment:.4f}  ({ctr_treatment*100:.2f}%)")
+print(f"Difference:    {diff:.4f}  ({diff*100:.2f} percentage points)")
+
+# Two-proportion z-test (one-tailed: is treatment > control?)
+p_pooled = (control_clicks.sum() + treatment_clicks.sum()) / (n_control + n_treatment)
+se = np.sqrt(p_pooled * (1 - p_pooled) * (1/n_control + 1/n_treatment))
+z_stat = diff / se
+p_value_one_tail = 1 - norm.cdf(z_stat)
+
+print(f"\nPooled proportion: {p_pooled:.4f}")
+print(f"Standard error:    {se:.6f}")
+print(f"Z-statistic:       {z_stat:.3f}")
+print(f"P-value (one-tail): {p_value_one_tail:.2e}")
+
+# 95% confidence interval for the difference
+ci_low = diff - 1.96 * se
+ci_high = diff + 1.96 * se
+print(f"\n95% CI for difference: ({ci_low:.4f}, {ci_high:.4f})")
+
+if p_value_one_tail < 0.05:
+    print("\nDecision: REJECT H₀ — Ship the new algorithm!")
+    print(f"The {diff*100:.2f} pp lift is statistically significant.")
+else:
+    print("\nDecision: FAIL TO REJECT H₀ — Keep the current algorithm.")
+
+# ============================================================
+# ONE-SAMPLE T-TEST: IS LATENCY DIFFERENT FROM TARGET?
+# ============================================================
+
+print("\n" + "=" * 60)
+print("ONE-SAMPLE T-TEST: Latency Check")
+print("=" * 60)
 print("Question: Is the mean response time different from 200ms?")
 
 # Sample data: response times (true mean = 215ms)
 response_times = np.random.normal(loc=215, scale=50, size=30)
 
-# Null hypothesis: μ = 200
 mu_null = 200
-
-# Perform one-sample t-test
 t_statistic, p_value = stats.ttest_1samp(response_times, mu_null)
 
 print(f"\nSample mean: {np.mean(response_times):.2f}ms")
 print(f"Sample std:  {np.std(response_times, ddof=1):.2f}ms")
 print(f"H₀: μ = {mu_null}ms")
-print(f"")
 print(f"t-statistic: {t_statistic:.3f}")
 print(f"p-value:     {p_value:.4f}")
-print(f"")
+
 if p_value < 0.05:
-    print("Result: Reject H₀ at α=0.05")
-    print("Conclusion: Response time is significantly different from 200ms")
+    print("Result: Reject H₀ — Response time is significantly different from 200ms")
 else:
-    print("Result: Fail to reject H₀ at α=0.05")
+    print("Result: Fail to reject H₀")
 
 # Confidence interval
-confidence_level = 0.95
 sem = stats.sem(response_times)
-ci = stats.t.interval(confidence_level, len(response_times)-1,
+ci = stats.t.interval(0.95, len(response_times)-1,
                       loc=np.mean(response_times), scale=sem)
-print(f"\n95% CI for mean: ({ci[0]:.2f}, {ci[1]:.2f})ms")
+print(f"95% CI for mean: ({ci[0]:.2f}, {ci[1]:.2f})ms")
 
-# ============================================
-# TWO-SAMPLE T-TEST (A/B TEST)
-# ============================================
+# ============================================================
+# TWO-SAMPLE T-TEST: COMPARING MODEL ACCURACY
+# ============================================================
 
-print("\n" + "=" * 50)
-print("TWO-SAMPLE T-TEST (A/B Testing)")
-print("=" * 50)
-print("Question: Does the new model (B) perform better than baseline (A)?")
+print("\n" + "=" * 60)
+print("TWO-SAMPLE T-TEST: Model A vs Model B Accuracy")
+print("=" * 60)
 
-# Model A: accuracy scores (baseline)
 model_a_scores = np.random.normal(loc=0.82, scale=0.05, size=50)
-# Model B: accuracy scores (new model, slightly better)
 model_b_scores = np.random.normal(loc=0.85, scale=0.05, size=50)
 
-# Two-sample t-test (two-tailed)
 t_stat, p_val_two = stats.ttest_ind(model_a_scores, model_b_scores)
-
-# One-tailed test (is B > A?)
 p_val_one = p_val_two / 2 if t_stat < 0 else 1 - p_val_two / 2
 
-print(f"\nModel A mean: {np.mean(model_a_scores):.4f}")
-print(f"Model B mean: {np.mean(model_b_scores):.4f}")
-print(f"Difference:   {np.mean(model_b_scores) - np.mean(model_a_scores):.4f}")
-print(f"")
-print(f"t-statistic:       {t_stat:.3f}")
-print(f"p-value (two-tail): {p_val_two:.4f}")
-print(f"p-value (one-tail): {p_val_one:.4f}")
-print(f"")
+print(f"\nModel A mean accuracy: {np.mean(model_a_scores):.4f}")
+print(f"Model B mean accuracy: {np.mean(model_b_scores):.4f}")
+print(f"Difference:            {np.mean(model_b_scores) - np.mean(model_a_scores):.4f}")
+print(f"t-statistic:           {t_stat:.3f}")
+print(f"p-value (two-tail):    {p_val_two:.4f}")
+print(f"p-value (one-tail):    {p_val_one:.4f}")
+
 if p_val_one < 0.05:
     print("Result: Model B is significantly better (α=0.05, one-tailed)")
 else:
     print("Result: Insufficient evidence that B is better")
 
-# ============================================
-# MULTIPLE COMPARISONS PROBLEM
-# ============================================
+# ============================================================
+# MULTIPLE COMPARISONS: THE P-HACKING TRAP
+# ============================================================
 
-print("\n" + "=" * 50)
-print("MULTIPLE COMPARISONS PROBLEM")
-print("=" * 50)
+print("\n" + "=" * 60)
+print("MULTIPLE COMPARISONS: The P-Hacking Trap")
+print("=" * 60)
 
-# Run 20 tests on random data (all nulls are true)
 n_tests = 20
 p_values = []
 
 for i in range(n_tests):
-    # Both groups from same distribution (null is true)
     group1 = np.random.normal(0, 1, 30)
     group2 = np.random.normal(0, 1, 30)
     _, p = stats.ttest_ind(group1, group2)
     p_values.append(p)
 
 significant_uncorrected = sum(p < 0.05 for p in p_values)
-print(f"Tests run: {n_tests} (all nulls TRUE)")
+print(f"\nTests run: {n_tests} (ALL nulls are TRUE — no real effects)")
 print(f"Significant at α=0.05: {significant_uncorrected}")
 print(f"Expected false positives: {n_tests * 0.05:.1f}")
+print("\nThis is why testing 20 metrics and cherry-picking the")
+print("significant one is bad science (and bad engineering).")
 
 # Bonferroni correction
 alpha_corrected = 0.05 / n_tests
@@ -262,19 +521,16 @@ significant_bonferroni = sum(p < alpha_corrected for p in p_values)
 print(f"\nWith Bonferroni correction (α={alpha_corrected:.4f}):")
 print(f"Significant: {significant_bonferroni}")
 
-# ============================================
-# POWER ANALYSIS
-# ============================================
+# ============================================================
+# POWER ANALYSIS: HOW MANY USERS DO YOU NEED?
+# ============================================================
 
-print("\n" + "=" * 50)
-print("POWER ANALYSIS")
-print("=" * 50)
-print("Question: How many samples do I need?")
-
-from scipy.stats import norm
+print("\n" + "=" * 60)
+print("POWER ANALYSIS: How Many Users Do You Need?")
+print("=" * 60)
 
 def calculate_power(n, effect_size, alpha=0.05):
-    """Calculate power for two-sample t-test."""
+    """Calculate power for two-sample z-test."""
     z_alpha = norm.ppf(1 - alpha/2)
     z_power = effect_size * np.sqrt(n/2) - z_alpha
     power = norm.cdf(z_power)
@@ -287,92 +543,92 @@ def required_sample_size(effect_size, power=0.8, alpha=0.05):
     n = 2 * ((z_alpha + z_power) / effect_size) ** 2
     return int(np.ceil(n))
 
-# Effect sizes (Cohen's d)
 effect_sizes = [0.2, 0.5, 0.8]  # small, medium, large
-print("\nEffect Size | Required n per group (power=0.8)")
-print("-" * 45)
-for d in effect_sizes:
+labels = ['small', 'medium', 'large']
+print("\nEffect Size | Required n per group (power=0.8, α=0.05)")
+print("-" * 55)
+for d, label in zip(effect_sizes, labels):
     n_required = required_sample_size(d)
-    print(f"d = {d} ({['small', 'medium', 'large'][effect_sizes.index(d)]:6s}) | n = {n_required}")
+    print(f"d = {d} ({label:6s}) | n = {n_required}")
 
-# Power curve
-print("\nPower vs Sample Size (effect_size = 0.5):")
-print("n\tPower")
+print("\nPower vs. Sample Size (effect_size = 0.5):")
+print(f"{'n':>6s}  {'Power':>7s}")
+print("-" * 15)
 for n in [10, 20, 50, 100, 200]:
     power = calculate_power(n, effect_size=0.5)
-    print(f"{n}\t{power:.3f}")
+    print(f"{n:>6d}  {power:>7.3f}")
 
-# ============================================
-# CHI-SQUARED TEST
-# ============================================
+# ============================================================
+# CHI-SQUARED TEST: IS BEHAVIOR SEGMENT-DEPENDENT?
+# ============================================================
 
-print("\n" + "=" * 50)
-print("CHI-SQUARED TEST")
-print("=" * 50)
-print("Question: Is model choice independent of user segment?")
+print("\n" + "=" * 60)
+print("CHI-SQUARED TEST: Algorithm Preference by User Segment")
+print("=" * 60)
 
-# Contingency table: rows = user segments, cols = chosen model
 observed = np.array([
-    [120, 80],   # Segment A: chose Model X vs Model Y
-    [90, 110]    # Segment B: chose Model X vs Model Y
+    [120, 80],   # Segment A: clicked recs from Algo X vs Algo Y
+    [90, 110]    # Segment B: clicked recs from Algo X vs Algo Y
 ])
 
 chi2, p_value, dof, expected = stats.chi2_contingency(observed)
 
 print("\nObserved frequencies:")
-print(f"          Model X  Model Y")
-print(f"Segment A:  {observed[0,0]}      {observed[0,1]}")
-print(f"Segment B:  {observed[1,0]}      {observed[1,1]}")
+print(f"          Algo X   Algo Y")
+print(f"Seg A:     {observed[0,0]}       {observed[0,1]}")
+print(f"Seg B:      {observed[1,0]}      {observed[1,1]}")
 
 print(f"\nExpected frequencies (if independent):")
-print(f"          Model X  Model Y")
-print(f"Segment A:  {expected[0,0]:.1f}    {expected[0,1]:.1f}")
-print(f"Segment B:  {expected[1,0]:.1f}    {expected[1,1]:.1f}")
+print(f"          Algo X   Algo Y")
+print(f"Seg A:    {expected[0,0]:.1f}     {expected[0,1]:.1f}")
+print(f"Seg B:    {expected[1,0]:.1f}     {expected[1,1]:.1f}")
 
-print(f"\nχ² = {chi2:.3f}")
+print(f"\nchi-squared = {chi2:.3f}")
 print(f"p-value = {p_value:.4f}")
 print(f"df = {dof}")
 
 if p_value < 0.05:
-    print("\nResult: Model choice depends on user segment")
+    print("Result: Algorithm preference depends on user segment")
 else:
-    print("\nResult: No significant association")
+    print("Result: No significant association")
 
-# ============================================
-# PRACTICAL A/B TESTING FRAMEWORK
-# ============================================
+# ============================================================
+# FULL A/B TEST FRAMEWORK (reusable)
+# ============================================================
 
-print("\n" + "=" * 50)
-print("PRACTICAL A/B TEST FRAMEWORK")
-print("=" * 50)
+print("\n" + "=" * 60)
+print("REUSABLE A/B TEST FRAMEWORK")
+print("=" * 60)
 
 def ab_test(control, treatment, alpha=0.05):
-    """Perform A/B test with full reporting."""
-    n_control = len(control)
-    n_treatment = len(treatment)
-
-    mean_control = np.mean(control)
-    mean_treatment = np.mean(treatment)
-    lift = (mean_treatment - mean_control) / mean_control * 100
+    """
+    Perform a complete A/B test with full reporting.
+    Returns a dict with all key metrics.
+    """
+    n_c = len(control)
+    n_t = len(treatment)
+    mean_c = np.mean(control)
+    mean_t = np.mean(treatment)
+    lift = (mean_t - mean_c) / mean_c * 100
 
     # Two-sample t-test
     t_stat, p_value = stats.ttest_ind(control, treatment)
 
     # Effect size (Cohen's d)
-    pooled_std = np.sqrt(((n_control-1)*np.var(control, ddof=1) +
-                          (n_treatment-1)*np.var(treatment, ddof=1)) /
-                         (n_control + n_treatment - 2))
-    cohens_d = (mean_treatment - mean_control) / pooled_std
+    pooled_std = np.sqrt(((n_c-1)*np.var(control, ddof=1) +
+                          (n_t-1)*np.var(treatment, ddof=1)) /
+                         (n_c + n_t - 2))
+    cohens_d = (mean_t - mean_c) / pooled_std
 
-    # Confidence interval for difference
-    se_diff = np.sqrt(np.var(control, ddof=1)/n_control +
-                      np.var(treatment, ddof=1)/n_treatment)
-    ci_low = (mean_treatment - mean_control) - 1.96 * se_diff
-    ci_high = (mean_treatment - mean_control) + 1.96 * se_diff
+    # Confidence interval for the difference
+    se_diff = np.sqrt(np.var(control, ddof=1)/n_c +
+                      np.var(treatment, ddof=1)/n_t)
+    ci_low = (mean_t - mean_c) - 1.96 * se_diff
+    ci_high = (mean_t - mean_c) + 1.96 * se_diff
 
     return {
-        'control_mean': mean_control,
-        'treatment_mean': mean_treatment,
+        'control_mean': mean_c,
+        'treatment_mean': mean_t,
         'lift_percent': lift,
         'p_value': p_value,
         'cohens_d': cohens_d,
@@ -380,128 +636,105 @@ def ab_test(control, treatment, alpha=0.05):
         'significant': p_value < alpha
     }
 
-# Example: Conversion rates
-control_conversions = np.random.binomial(1, 0.10, 1000)  # 10% baseline
-treatment_conversions = np.random.binomial(1, 0.12, 1000)  # 12% treatment
+# Use the framework on our running example data
+results = ab_test(control_clicks, treatment_clicks)
 
-results = ab_test(control_conversions, treatment_conversions)
-
-print("\nA/B Test Results:")
-print(f"Control conversion rate:   {results['control_mean']:.2%}")
-print(f"Treatment conversion rate: {results['treatment_mean']:.2%}")
-print(f"Relative lift:             {results['lift_percent']:+.1f}%")
-print(f"")
-print(f"p-value:    {results['p_value']:.4f}")
-print(f"Cohen's d:  {results['cohens_d']:.3f}")
+print("\nA/B Test Results (Recommendation Algorithm):")
+print(f"Control CTR:   {results['control_mean']:.4f}")
+print(f"Treatment CTR: {results['treatment_mean']:.4f}")
+print(f"Relative lift: {results['lift_percent']:+.1f}%")
+print(f"p-value:       {results['p_value']:.2e}")
+print(f"Cohen's d:     {results['cohens_d']:.3f}")
 print(f"95% CI for difference: ({results['ci_95'][0]:.4f}, {results['ci_95'][1]:.4f})")
-print(f"")
-print(f"Statistically significant: {'Yes' if results['significant'] else 'No'}")
+print(f"Significant:   {'Yes' if results['significant'] else 'No'}")
 ```
 
-## ML Relevance
+## Where Hypothesis Testing Shows Up in ML
 
-### Where Hypothesis Testing Appears in ML
+### 1. A/B Testing for Models
 
-1. **A/B Testing for Models**
-   - Is the new model significantly better than the baseline?
-   - Does the new feature improve performance?
-   - Are two model architectures different?
+This is the most direct application. You deploy two models, split traffic, and use a hypothesis test to decide which is better. The running example in this chapter is exactly this scenario.
 
-2. **Feature Selection**
-   - Univariate tests (t-test, chi-squared) filter irrelevant features
-   - ANOVA for features with multiple categories
-   - F-tests for groups of features
+### 2. Feature Selection
 
-3. **Model Diagnostics**
-   - Test if residuals are normally distributed (Shapiro-Wilk)
-   - Test for heteroscedasticity (Breusch-Pagan)
-   - Test for autocorrelation (Durbin-Watson)
+Before training, you can use statistical tests to filter out irrelevant features:
+- **T-test / ANOVA**: Does this numeric feature differ across classes?
+- **Chi-squared test**: Is this categorical feature associated with the target?
+- **F-test**: Does this group of features jointly have predictive power?
 
-4. **Research and Publications**
-   - Statistical significance is required for publishing new methods
-   - Multiple dataset comparisons need correction (Bonferroni, Holm)
-   - Effect sizes matter as much as p-values
+### 3. Model Diagnostics
 
-### Statistical Testing in ML Pipelines
+After training, tests tell you whether your model's assumptions hold:
+- **Shapiro-Wilk test**: Are the residuals normally distributed?
+- **Breusch-Pagan test**: Is the variance constant (homoscedasticity)?
+- **Durbin-Watson test**: Are the residuals independent (no autocorrelation)?
 
-```mermaid
-graph LR
-    A[Train Model A<br/>Train Model B] --> B[Evaluate on Test Set]
-    B --> C[Statistical Test<br/>e.g., paired t-test]
-    C --> D{p < α?}
-    D -->|Yes| E[Model B is better]
-    D -->|No| F[No significant difference]
-```
+### 4. Research and Model Comparison
 
-### Common Tests for ML
+When publishing results or deciding between architectures:
 
 | Scenario | Recommended Test |
-|----------|------------------|
+|---|---|
 | Compare 2 models on same test set | Paired t-test |
-| Compare accuracy on multiple datasets | Wilcoxon signed-rank |
+| Compare accuracy across multiple datasets | Wilcoxon signed-rank |
 | Compare multiple models | ANOVA + post-hoc tests |
 | Classification accuracy | McNemar's test |
 | Feature importance | Permutation test |
 
-## When to Use / Ignore
+## Pitfalls and Practical Wisdom
 
-### When to Use Hypothesis Testing
+### Pitfall 1: Confusing Statistical and Practical Significance
 
-- **A/B testing**: Before deploying a new model/feature
-- **Research**: Claiming an improvement over baselines
-- **Feature selection**: Filtering out noise features
-- **Debugging**: Determining if performance drop is significant
+With n = 10,000,000 users, even a 0.01% improvement in CTR will be "statistically significant." But is it worth the engineering cost to maintain the new system? Always report **effect sizes** and **confidence intervals**, not just p-values.
 
-### When to Be Cautious
+### Pitfall 2: P-Hacking
 
-- **Fishing expeditions**: Testing many hypotheses until one is significant (p-hacking)
-- **Tiny effects**: Statistical significance $\neq$ practical significance
-- **Violated assumptions**: Tests assume certain conditions (normality, independence)
-- **Single metric focus**: Ignoring other important factors
+You test 20 different metrics. One of them has p < 0.05. You report that one. Congratulations, you just found noise.
 
-### Common Pitfalls
+At $\alpha = 0.05$ with 20 tests, you *expect* 1 false positive even when all nulls are true. Solutions:
+- **Pre-register** your primary metric before the experiment
+- **Bonferroni correction**: use $\alpha / k$ where $k$ is the number of tests
+- **False Discovery Rate (FDR)** control for exploratory analysis
 
-1. **Confusing statistical and practical significance**:
-   - With enough data, any tiny difference becomes "significant"
-   - Always report effect sizes and confidence intervals
+### Pitfall 3: Ignoring Power (Underpowered Tests)
 
-2. **P-hacking**: Testing multiple hypotheses without correction
-   - Solution: Pre-register hypotheses, use Bonferroni correction
+"We ran an A/B test for 2 days, saw no significant difference, so we killed the feature." Maybe you just did not have enough data. Failing to reject $H_0$ does NOT mean $H_0$ is true. Always do a **power analysis** before running the experiment.
 
-3. **Ignoring power**: Failing to find an effect doesn't mean it doesn't exist
-   - Underpowered studies have high Type II error rates
+### Pitfall 4: Peeking at Results
 
-4. **Misinterpreting p-values**: Remember, p-value is NOT P(H₀ is true)
+You check your A/B test every day and stop as soon as you see p < 0.05. This inflates your false positive rate far above 5%. If you want to check early, use **sequential testing** methods designed for this.
 
-5. **Multiple testing without correction**:
-   - With 20 tests at $\alpha = 0.05$, expect ~1 false positive even if all nulls are true
+### Pitfall 5: One Metric, Many Dimensions
+
+Your overall A/B test is not significant, so you slice by country, device type, and user age. In one segment, you find p < 0.05. This is the same multiple comparisons problem -- you just hid it behind subgroup analysis.
 
 ## Exercises
 
 ### Exercise 1: Interpreting P-Values
 
-You run an A/B test and get p = 0.03. Which interpretations are correct?
+You run an A/B test on the recommendation algorithm and get p = 0.03. Which interpretations are correct?
 
-a) There's a 3% chance the null hypothesis is true
-b) There's a 3% chance of seeing this difference if there's no real effect
-c) 97% confident the treatment works
-d) If we repeated the experiment many times and there's truly no effect, 3% would show differences this large or larger
+a) There is a 3% chance the null hypothesis is true.
+b) If there were truly no difference, there is a 3% chance of seeing a result this extreme.
+c) You are 97% confident the new algorithm is better.
+d) If you repeated this experiment many times and there were truly no effect, about 3% of experiments would show a difference this large or larger.
 
 **Solution**:
-Only **(b)** and **(d)** are correct (they say the same thing).
+Only **(b)** and **(d)** are correct -- they say the same thing in different words.
 
-(a) is wrong: p-value is not P(H₀ true)
-(c) is wrong: This confuses p-value with confidence level
+(a) is wrong: the p-value is not $P(H_0 \text{ is true})$. It is $P(\text{data} \mid H_0)$, not $P(H_0 \mid \text{data})$.
+(c) is wrong: this confuses the p-value with a confidence level. You would need Bayes' theorem to make a statement like this.
 
 ### Exercise 2: Sample Size Calculation
 
-You want to detect a "small" effect (Cohen's d = 0.2) with 80% power at α = 0.05. Approximately how many subjects do you need per group?
+You want to detect a "small" effect (Cohen's d = 0.2) with 80% power at $\alpha = 0.05$. How many users do you need per group?
 
 **Solution**:
-Using the formula: $n = 2 \cdot \left(\frac{z_{\alpha/2} + z_{power}}{d}\right)^2$
+Using the formula: $n = 2 \cdot \left(\frac{z_{\alpha/2} + z_{\text{power}}}{d}\right)^2$
 
 ```python
 from scipy.stats import norm
+import numpy as np
 
 z_alpha = norm.ppf(0.975)  # 1.96
 z_power = norm.ppf(0.8)    # 0.84
@@ -511,38 +744,43 @@ n = 2 * ((z_alpha + z_power) / d) ** 2
 print(f"Required n per group: {int(np.ceil(n))}")  # ~393
 ```
 
-You need approximately **393 subjects per group** (786 total).
+You need approximately **393 users per group** (786 total). For the running example with n = 10,000 per group, you are massively overpowered for even small effects -- which is exactly why the result was so clear.
 
-### Exercise 3: Type I vs Type II Error
+### Exercise 3: Type I vs Type II Error Tradeoff
 
-A medical test for a disease has:
-- α = 0.01 (1% false positive rate)
-- Power = 0.95 (95% detection rate)
+Your anomaly detection system has:
+- $\alpha = 0.01$ (1% false positive rate)
+- Power = 0.95 (95% detection rate, so $\beta = 0.05$)
 
-a) What is the Type II error rate?
-b) If 1% of the population has the disease, and you test 10,000 people, how many false positives and false negatives do you expect?
+a) If 1% of requests are anomalous and you process 10,000 requests, how many false positives and false negatives do you expect?
+
+b) Despite the low false positive rate, why might you still have a problem?
 
 **Solution**:
-a) Type II error rate β = 1 - Power = 1 - 0.95 = **0.05 (5%)**
 
-b) In 10,000 people:
-- Diseased: 100 (1%)
-- Healthy: 9,900 (99%)
+a) In 10,000 requests:
+- Anomalous: 100 (1% of 10,000)
+- Normal: 9,900 (99% of 10,000)
 
-False positives = 9,900 × 0.01 = **99**
-False negatives = 100 × 0.05 = **5**
+False positives = 9,900 * 0.01 = **99**
+False negatives = 100 * 0.05 = **5**
 
-Note: Despite the low false positive rate (1%), we get more false positives (99) than false negatives (5) because there are many more healthy people!
+b) Even with a 1% false positive rate, you get **99 false positives** vs. only **5 false negatives**. That is because there are so many more normal requests than anomalous ones. This is the **base rate problem** -- the same issue that makes rare-event detection hard in ML (class imbalance). Your precision is only 100 / (100 + 99 - 5) = roughly 50%, even with seemingly good error rates.
 
 ## Summary
 
-- **Null hypothesis ($H_0$)**: Default assumption (no effect); what we try to disprove
-- **P-value**: Probability of observing data this extreme if $H_0$ is true; NOT the probability $H_0$ is true
-- **Significance level ($\alpha$)**: Threshold for rejecting $H_0$; equals Type I error rate
-- **Confidence interval**: Range of plausible parameter values; connected to hypothesis testing
-- **Type I error (α)**: False positive - rejecting true $H_0$
-- **Type II error (β)**: False negative - failing to reject false $H_0$
-- **Power (1-β)**: Probability of detecting a real effect
-- **In ML**: A/B testing, model comparison, feature selection, research validation
-- **Key pitfalls**: P-hacking, confusing statistical/practical significance, ignoring effect sizes
-- **Best practices**: Pre-register hypotheses, report effect sizes and CIs, correct for multiple comparisons
+Here is what you need to remember:
+
+- **Null hypothesis ($H_0$)**: "Nothing changed" -- the current production system is your default assumption.
+- **P-value**: The probability of seeing your result if nothing changed. It is a false-alarm rate, not the probability that $H_0$ is true.
+- **Significance level ($\alpha$)**: Your tolerance for false alarms. Set it before you look at the data.
+- **Type I error (false positive)**: Deploying a change that does not actually help. Controlled by $\alpha$.
+- **Type II error (false negative)**: Rejecting a change that would have helped. Controlled by sample size and power.
+- **Power ($1 - \beta$)**: Your ability to detect real effects. Do a power analysis before running any experiment.
+- **Confidence interval**: Tells you both significance AND effect size. Report it alongside p-values.
+- **Key pitfall**: p < 0.05 does NOT mean 95% chance the effect is real.
+- **In practice**: Pre-register your hypothesis, choose your metric before the experiment, correct for multiple comparisons, and always report effect sizes.
+
+## What Comes Next
+
+You have completed statistics. Descriptive stats, sampling, estimation, and hypothesis testing -- these tools let you evaluate models, compare algorithms, and make data-driven decisions. When someone asks "is model B better than model A?", you now know how to answer rigorously instead of eyeballing metrics and hoping for the best. These foundations will serve you every time you run an experiment, validate a model, or make a ship/no-ship decision.

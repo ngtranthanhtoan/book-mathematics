@@ -1,54 +1,76 @@
 # Chapter 2: Shannon Entropy
 
-## Intuition
+## From Single Surprise to Average Uncertainty
 
-If self-information tells us the surprise of a single event, **entropy** tells us the *average surprise* we expect from a probability distribution. It measures the inherent uncertainty or randomness in a system.
+Single-event information measures surprise at ONE outcome. Entropy averages this over ALL outcomes — giving you the overall uncertainty of a distribution.
 
-Think of entropy as answering: "Before I observe an outcome, how uncertain am I about what will happen?"
+In the last chapter, you saw that a single event carries $-\log P(x)$ bits of surprise. But in practice, you don't care about just one outcome. You want to know: across all possible outcomes, how much surprise should you *expect* on average? That's entropy.
 
-### Real-World Analogies
+A fair coin has maximum uncertainty — you genuinely don't know what's coming. A biased coin (99% heads) has almost no uncertainty. Entropy quantifies this: $H(X) = -\sum p(x) \log p(x)$. It's the average surprise, the expected information content, and — in ML — the baseline for how good a classifier CAN be.
 
-**Weather Forecasting:**
-- A city with consistent sunny weather has low entropy—you can predict tomorrow confidently
-- A city with highly variable weather has high entropy—tomorrow is genuinely uncertain
+## Intuition: Why You Already Know This
 
-**Password Strength:**
-- A password from {a, b, c} has less entropy than one from {a-z, A-Z, 0-9}
-- More possibilities = more uncertainty = higher entropy = better security
+You've encountered entropy your entire engineering career, even if you didn't call it that.
 
-**Multiple Choice Tests:**
-- If you know a subject well, your answer distribution is peaked (low entropy)
-- If you're guessing randomly, your distribution is uniform (maximum entropy)
+**Compression lower bound.** When you gzip a file, the algorithm exploits patterns to shrink it. Entropy is the theoretical floor — you literally cannot compress data below $H$ bits per symbol on average. If your source has 2 bits of entropy per character, no lossless compression scheme in the universe will average below 2 bits per character. That's Shannon's source coding theorem, and it's why entropy matters to anyone who's ever shipped bytes over a wire.
 
-### Why This Matters for ML
+**Decision tree splits.** Every time scikit-learn's `DecisionTreeClassifier` picks a feature to split on, it's maximizing *information gain* — which is just the reduction in entropy. Before the split, the labels have some entropy. After the split, each branch has lower entropy. The feature that drops entropy the most wins. You've been using entropy every time you trained a tree.
 
-Entropy appears everywhere in machine learning:
-- **Model confidence**: Low entropy predictions = confident model
-- **Decision trees**: Split on features that reduce entropy most
-- **Exploration vs exploitation**: High entropy policies explore more
-- **Feature selection**: Prefer features that reduce target entropy
-- **Maximum entropy models**: When uncertain, be maximally uncertain
+**Password strength.** When your security library rates a password, it's estimating entropy. A password drawn uniformly from 8 lowercase letters has $8 \times \log_2(26) \approx 37.6$ bits of entropy. A password drawn from a dictionary of 10,000 words has $\log_2(10000) \approx 13.3$ bits. High entropy = hard to guess. Low entropy = brute-forceable.
 
-## Visual Explanation
+**Random number generation.** Your OS collects entropy from hardware events (mouse movements, disk timing, network jitter) to seed `/dev/urandom`. High entropy = good randomness source. Low entropy = predictable output. The kernel literally tracks an "entropy pool" measured in bits.
 
-### Entropy for Different Distributions
+## Running Example: Genre Prediction
 
-```mermaid
-graph LR
-    subgraph "Low Entropy"
-    A[Peaked Distribution] --> B["H ≈ 0 bits"]
-    end
-    subgraph "Medium Entropy"
-    C[Biased Distribution] --> D["H ≈ 1 bit"]
-    end
-    subgraph "High Entropy"
-    E[Uniform Distribution] --> F["H = log(n) bits"]
-    end
-```
+Throughout this chapter, you'll follow one concrete example. You have a music genre classifier with four classes: Rock, Jazz, Pop, Classical. Two models make predictions for the same song:
 
-### Visual: Binary Entropy Function
+**Model A (clueless):** outputs uniform $[0.25, 0.25, 0.25, 0.25]$
 
-For a binary distribution with $P(1) = p$ and $P(0) = 1-p$:
+**Model B (confident):** outputs $[0.9, 0.05, 0.03, 0.02]$
+
+Intuitively, Model A has learned nothing — it's guessing randomly. Model B has strong opinions. Entropy will make this precise.
+
+## The Formula
+
+For a discrete random variable $X$ with probability distribution $P$, the **Shannon entropy** is:
+
+$$H(X) = H(P) = -\sum_{x} P(x) \log P(x) = \mathbb{E}[-\log P(X)]$$
+
+That's it. You take every possible outcome, compute its self-information $-\log P(x)$, weight it by how likely it is $P(x)$, and sum. The result is the *expected surprise* — how uncertain you are before observing $X$.
+
+**Units depend on the log base:**
+- $\log_2$: bits (most common in ML and information theory)
+- $\ln$: nats (natural units, common in optimization because gradients are cleaner)
+- $\log_{10}$: hartleys (rare, but you'll see it in older textbooks)
+
+**Convention for zero probabilities:** When $P(x) = 0$, you define $0 \cdot \log(0) = 0$ using the limit:
+
+$$\lim_{p \to 0^+} p \log p = 0$$
+
+This makes sense: an event that never happens contributes zero average surprise.
+
+### Back to Genre Prediction
+
+Let's compute entropy for both models using base-2 (bits):
+
+**Model A** (uniform $[0.25, 0.25, 0.25, 0.25]$):
+
+$$H_A = -4 \times (0.25 \times \log_2 0.25) = -4 \times (0.25 \times (-2)) = 2.0 \text{ bits}$$
+
+**Model B** (confident $[0.9, 0.05, 0.03, 0.02]$):
+
+$$H_B = -(0.9 \log_2 0.9 + 0.05 \log_2 0.05 + 0.03 \log_2 0.03 + 0.02 \log_2 0.02)$$
+$$\approx -(−0.137 + (−0.216) + (−0.152) + (−0.113)) \approx 0.618 \text{ bits}$$
+
+Model A: 2.0 bits (maximum for 4 classes). Model B: ~0.6 bits. The numbers confirm your intuition — the uniform model carries maximum uncertainty, the confident model carries very little.
+
+### Binary Entropy Function
+
+For the special case of a Bernoulli random variable with $P(X=1) = p$:
+
+$$H_b(p) = -p \log_2 p - (1-p) \log_2(1-p)$$
+
+This function peaks at $p = 0.5$ with $H_b(0.5) = 1$ bit and reaches zero at both extremes.
 
 ```
 Entropy H(p)
@@ -67,50 +89,68 @@ Entropy H(p)
     0   0.2  0.4  0.6  0.8  1.0
 ```
 
-Key observations:
-- **Maximum at p = 0.5**: Fair coin has maximum uncertainty
-- **Zero at p = 0 or p = 1**: Certain outcomes have no uncertainty
-- **Symmetric**: H(p) = H(1-p)
+The binary entropy curve is the most important shape in information theory. Every time you see a classification problem with two outcomes, this curve tells you the uncertainty story.
 
-## Mathematical Foundation
+## Entropy Across Distributions: An ASCII Bar Chart
 
-### Definition: Shannon Entropy
+Here's what entropy looks like for several distributions, all in bits:
 
-For a discrete random variable $X$ with probability distribution $P$, the **Shannon entropy** is:
+```
+Distribution                      Entropy (bits)    Bar
+─────────────────────────────────────────────────────────────────
+Certain [1.0, 0, 0, 0]           0.000             |
+99/1 coin [0.99, 0.01]           0.081             |=
+90/10 coin [0.90, 0.10]          0.469             |=====
+Genre model B [.9,.05,.03,.02]   0.618             |======
+70/30 coin [0.70, 0.30]          0.881             |=========
+Fair coin [0.50, 0.50]           1.000             |==========
+Loaded die [.5,.1,.1,.1,.1,.1]   2.161             |======================
+Fair 4-sided [.25,.25,.25,.25]   2.000             |====================
+Fair 6-sided die                 2.585             |==========================
+Fair 8-sided die                 3.000             |==============================
+Uniform over 256 (1 byte)        8.000             |============== ... (80) ==============
+─────────────────────────────────────────────────────────────────
+                                                   0         1         2         3
+                                                   Each '=' ≈ 0.1 bits
+```
 
-$$H(X) = H(P) = -\sum_{x} P(x) \log P(x) = \mathbb{E}[-\log P(X)]$$
+Notice the pattern: more equally-spread outcomes = higher entropy. The uniform distribution over $n$ outcomes always hits the ceiling at $\log_2(n)$ bits. Anything non-uniform falls below.
 
-This is simply the **expected self-information**—the average surprise.
+## Properties of Entropy
 
-### Convention
+These aren't abstract theorems — each one has a direct engineering consequence.
 
-When $P(x) = 0$, we define $0 \cdot \log(0) = 0$ using the limit:
-$$\lim_{p \to 0^+} p \log p = 0$$
+### 1. Non-negativity: $H(X) \geq 0$
 
-### Properties of Entropy
+Entropy is always non-negative. You can't have negative average surprise. This follows directly from the fact that probabilities are in $[0, 1]$, so $-\log P(x) \geq 0$.
 
-1. **Non-negativity**: $H(X) \geq 0$
-   - Entropy is always non-negative
+*Engineering consequence:* Any time your entropy calculation returns a negative number, you have a bug.
 
-2. **Maximum for uniform distribution**: $H(X) \leq \log |X|$
-   - Achieved when all outcomes are equally likely
+### 2. Maximum for uniform distribution: $H(X) \leq \log |X|$
 
-3. **Zero for deterministic distributions**: $H(X) = 0$ iff $X$ is constant
-   - No uncertainty = no entropy
+Entropy is maximized when all outcomes are equally likely. The maximum value is $\log n$ where $n$ is the number of possible outcomes.
 
-4. **Additivity for independent variables**: $H(X, Y) = H(X) + H(Y)$
-   - When $X$ and $Y$ are independent
+*Engineering consequence:* This gives you a normalization constant. You can compute $H(X) / \log n$ to get a "normalized entropy" between 0 and 1 that's comparable across distributions with different support sizes.
 
-5. **Chain rule**: $H(X, Y) = H(X) + H(Y|X)$
-   - Joint entropy equals marginal plus conditional
+> **Common Mistake:** Entropy is maximized by the uniform distribution. If your model's output is uniform, it has learned NOTHING. When you see a softmax layer outputting near-uniform probabilities after training, that's not "being fair" — that's a model that failed to learn any signal from the data. Don't confuse maximum entropy with good performance.
 
-### Binary Entropy Function
+### 3. Zero for deterministic distributions: $H(X) = 0$ iff $X$ is constant
 
-For a Bernoulli random variable with $P(X=1) = p$:
+If you know the outcome with certainty, there's zero uncertainty. Conversely, any entropy above zero means there's genuine uncertainty.
 
-$$H_b(p) = -p \log p - (1-p) \log(1-p)$$
+*Engineering consequence:* In a perfectly separable classification problem, a decision tree can achieve zero entropy in its leaf nodes. In practice, you'll never see exactly zero — and that's fine.
 
-This function peaks at $p = 0.5$ with $H_b(0.5) = 1$ bit.
+### 4. Additivity for independent variables: $H(X, Y) = H(X) + H(Y)$
+
+When $X$ and $Y$ are independent, the joint entropy is the sum of the individual entropies.
+
+*Engineering consequence:* This is why you can think of entropy as a "measure of information." Independent information sources add up, just like you'd expect from a well-behaved measure.
+
+### 5. Chain rule: $H(X, Y) = H(X) + H(Y|X)$
+
+The joint entropy of two variables equals the entropy of the first plus the conditional entropy of the second given the first. This holds whether or not $X$ and $Y$ are independent.
+
+*Engineering consequence:* This is the mathematical backbone of decision trees. Each split conditions on a feature, and the chain rule tells you exactly how much entropy remains.
 
 ### Conditional Entropy
 
@@ -118,7 +158,7 @@ The entropy of $Y$ given $X$ is:
 
 $$H(Y|X) = \sum_x P(x) H(Y|X=x) = -\sum_{x,y} P(x,y) \log P(y|x)$$
 
-This measures remaining uncertainty in $Y$ after observing $X$.
+This measures the remaining uncertainty in $Y$ after you observe $X$. It's always less than or equal to $H(Y)$ — knowing something never increases uncertainty on average.
 
 ### Mutual Information (Preview)
 
@@ -126,7 +166,60 @@ The reduction in entropy from knowing another variable:
 
 $$I(X; Y) = H(Y) - H(Y|X) = H(X) - H(X|Y)$$
 
-This quantifies how much information $X$ and $Y$ share.
+This quantifies how much information $X$ and $Y$ share. You'll see this again when we cover KL divergence.
+
+## ML Applications
+
+### Decision Trees and Information Gain
+
+This is where entropy earns its keep in day-to-day ML. The information gain for splitting on feature $X$ is:
+
+$$\text{Information Gain} = H(Y) - H(Y|X) = H(\text{parent}) - \sum_{\text{children}} \frac{N_{\text{child}}}{N_{\text{parent}}} H(\text{child})$$
+
+Trees split on the feature that maximizes information gain — equivalently, minimizes the weighted conditional entropy of the children. Every `criterion='entropy'` you've passed to scikit-learn triggers exactly this computation.
+
+Let's trace through a concrete split. You're predicting whether users churn (binary: yes/no). Before splitting, 70% stay and 30% churn:
+
+$$H(\text{before}) = -0.7 \log_2 0.7 - 0.3 \log_2 0.3 \approx 0.881 \text{ bits}$$
+
+You split on "subscription tier." The Premium branch has 90% stay / 10% churn. The Free branch has 30% stay / 70% churn. Branches are equal size:
+
+$$H(\text{after}) = 0.5 \times H_b(0.9) + 0.5 \times H_b(0.3) = 0.5 \times 0.469 + 0.5 \times 0.881 = 0.675 \text{ bits}$$
+
+$$\text{Information Gain} = 0.881 - 0.675 = 0.206 \text{ bits}$$
+
+That 0.206 bits is how much uncertainty the "subscription tier" feature resolves. If another feature gave 0.4 bits, you'd split on that one instead.
+
+### Neural Network Confidence
+
+The entropy of a softmax output tells you how confident your model is:
+
+- **Low entropy** = peaked distribution = confident prediction
+- **High entropy** = flat distribution = uncertain prediction
+
+You'll use this for:
+
+- **Active learning:** Query the oracle on samples where your model has highest entropy — those are the ones where a label would be most informative.
+- **Uncertainty quantification:** Flag predictions with entropy above a threshold for human review.
+- **Out-of-distribution detection:** OOD inputs often produce higher-entropy softmax outputs because the model hasn't seen anything like them.
+
+Back to genre prediction: if you threshold at 1.0 bits, Model A (2.0 bits) gets flagged as uncertain, Model B (0.6 bits) passes as confident. That's a simple but effective production-grade uncertainty filter.
+
+### Maximum Entropy Principle
+
+When you have constraints but no other information, the least biased distribution is the one with maximum entropy subject to those constraints. This principle underlies:
+
+- **Logistic regression** (yes, really — it's a maximum entropy classifier)
+- **Exponential family distributions** (they're the max-entropy distributions for given sufficient statistics)
+- **Regularization** (entropy regularization in RL encourages exploration)
+
+### Reinforcement Learning: Entropy as Exploration
+
+In policy gradient methods, adding an entropy bonus to the objective prevents premature convergence:
+
+$$\mathcal{L} = \mathbb{E}[R] + \alpha H(\pi)$$
+
+The $\alpha H(\pi)$ term rewards the policy for maintaining uncertainty — trying diverse actions rather than committing too early to a suboptimal strategy. SAC (Soft Actor-Critic) is built entirely around this idea.
 
 ## Code Example
 
@@ -225,21 +318,20 @@ plt.tight_layout()
 plt.savefig('binary_entropy.png', dpi=150)
 plt.show()
 
-# Example 3: Entropy as measure of model confidence
-print("=== Model Confidence via Entropy ===\n")
+# Example 3: Genre prediction — the running example
+print("=== Genre Prediction: Entropy as Confidence ===\n")
 
-# Simulated softmax outputs for a 3-class classifier
-predictions = {
-    "Confident correct": [0.95, 0.03, 0.02],
-    "Somewhat confident": [0.7, 0.2, 0.1],
-    "Uncertain": [0.4, 0.35, 0.25],
-    "Random guessing": [1/3, 1/3, 1/3],
+genre_models = {
+    "Model A (uniform)": [0.25, 0.25, 0.25, 0.25],
+    "Model B (confident)": [0.9, 0.05, 0.03, 0.02],
+    "Model C (somewhat confident)": [0.6, 0.2, 0.15, 0.05],
+    "Model D (two-way toss-up)": [0.45, 0.45, 0.05, 0.05],
 }
 
-for name, probs in predictions.items():
+for name, probs in genre_models.items():
     H = entropy(probs, base='2')
-    max_H = np.log2(3)
-    confidence = 1 - (H / max_H)  # Normalized confidence
+    max_H = np.log2(4)
+    confidence = 1 - (H / max_H)
 
     print(f"{name}:")
     print(f"  Softmax output: {probs}")
@@ -249,7 +341,6 @@ for name, probs in predictions.items():
 # Example 4: Entropy reduction in decision trees
 print("=== Entropy in Decision Trees ===\n")
 
-# Simulated: predicting "play tennis" based on weather
 # Before split
 p_play = 9/14
 H_before = binary_entropy(p_play)
@@ -304,54 +395,28 @@ Fair 6-sided die:
   Max possible: 2.585 bits
   Efficiency: 100.0%
 
-=== Model Confidence via Entropy ===
+=== Genre Prediction: Entropy as Confidence ===
 
-Confident correct:
-  Softmax output: [0.95, 0.03, 0.02]
-  Entropy: 0.335 bits (max: 1.585)
-  Confidence score: 78.9%
-
-Random guessing:
-  Softmax output: [0.3333333333333333, 0.3333333333333333, 0.3333333333333333]
-  Entropy: 1.585 bits (max: 1.585)
+Model A (uniform):
+  Softmax output: [0.25, 0.25, 0.25, 0.25]
+  Entropy: 2.000 bits (max: 2.000)
   Confidence score: 0.0%
+
+Model B (confident):
+  Softmax output: [0.9, 0.05, 0.03, 0.02]
+  Entropy: 0.618 bits (max: 2.000)
+  Confidence score: 69.1%
+
+=== Entropy in Decision Trees ===
+
+Before split: P(play) = 0.643, H = 0.940 bits
+  Sunny: weight=0.357, P(play|Sunny)=0.40, H=0.971
+  Overcast: weight=0.286, P(play|Overcast)=1.00, H=0.000
+  Rain: weight=0.357, P(play|Rain)=0.60, H=0.971
+
+After split: H(Play|Outlook) = 0.694 bits
+Information gain: 0.247 bits
 ```
-
-## ML Relevance
-
-### Decision Trees and Random Forests
-
-Entropy is central to tree-based algorithms:
-
-$$\text{Information Gain} = H(Y) - H(Y|X) = H(\text{parent}) - \sum_{\text{children}} \frac{N_{\text{child}}}{N_{\text{parent}}} H(\text{child})$$
-
-Trees split on features that maximize information gain (minimize conditional entropy).
-
-### Neural Network Confidence
-
-Entropy of softmax outputs measures prediction confidence:
-- **Low entropy**: Model is confident (peaked distribution)
-- **High entropy**: Model is uncertain (flat distribution)
-
-This is used in:
-- Active learning: Query samples with highest entropy
-- Uncertainty quantification: Flag uncertain predictions
-- Out-of-distribution detection: OOD samples often have higher entropy
-
-### Maximum Entropy Principle
-
-When you have partial information, the least biased distribution is the one with maximum entropy subject to constraints. This principle underlies:
-- Maximum entropy classifiers (logistic regression)
-- Exponential family distributions
-- Statistical physics connections
-
-### Reinforcement Learning
-
-Policy entropy encourages exploration:
-
-$$\mathcal{L} = \mathbb{E}[R] + \alpha H(\pi)$$
-
-Higher entropy policies try more actions, avoiding premature convergence.
 
 ## Interpretation Guide
 
@@ -365,36 +430,16 @@ Higher entropy policies try more actions, avoiding premature convergence.
 
 ### Comparing Entropies
 
-- Same number of outcomes: Higher entropy = more uncertainty
-- Different outcomes: Compare to maximum possible ($\log n$)
-- Use **normalized entropy** $H/H_{max}$ for fair comparison
+When you're comparing entropy values across different scenarios, keep these rules in mind:
 
-## When to Use / Ignore
-
-### When to Use Entropy
-
-- **Measuring uncertainty** in model predictions
-- **Feature selection** in decision trees
-- **Encouraging exploration** in RL
-- **Comparing distribution** "spreadness"
-- **Password/key strength** analysis
-
-### When to Look Beyond
-
-- **Comparing two distributions**: Use KL divergence or cross-entropy
-- **Continuous distributions**: Use differential entropy (but interpret carefully)
-- **When direction matters**: KL divergence is asymmetric
-
-### Common Pitfalls
-
-1. **Forgetting base**: Always specify bits or nats
-2. **Comparing entropies with different support sizes**: Normalize first
-3. **Interpreting high entropy as "bad"**: Depends on context (exploration needs high entropy)
-4. **Differential entropy can be negative**: Unlike discrete entropy
+- **Same number of outcomes:** Higher entropy = more uncertainty. Simple.
+- **Different number of outcomes:** Compare to the maximum possible ($\log_2 n$). Raw entropy values are misleading — 2.0 bits is maximum for 4 classes but moderate for 256 classes.
+- **Normalized entropy** $H/H_{max}$ gives you a 0-to-1 scale that's comparable across different support sizes.
 
 ## Exercises
 
-### Exercise 1: Maximum Entropy
+### Exercise 1: Maximum Entropy Proof
+
 **Problem**: Prove that for a discrete distribution over $n$ outcomes, entropy is maximized when the distribution is uniform.
 
 **Solution**:
@@ -408,13 +453,14 @@ $$\frac{\partial \mathcal{L}}{\partial p_i} = -\log p_i - 1 - \lambda = 0$$
 This gives $p_i = e^{-1-\lambda}$ for all $i$, meaning all probabilities are equal.
 With $\sum p_i = 1$, we get $p_i = 1/n$, so $H_{max} = \log n$.
 
-### Exercise 2: Entropy of English
-**Problem**: If English letters appeared uniformly, what would the entropy per letter be? Given that actual English has about 1.5 bits per letter, what does this tell us?
+### Exercise 2: Entropy of English Text
+
+**Problem**: If English letters appeared uniformly, what would the entropy per letter be? Given that actual English has about 1.5 bits per letter, what does this tell you?
 
 **Solution**:
 ```python
 # Uniform distribution over 26 letters
-H_uniform = np.log2(26)  # ≈ 4.7 bits
+H_uniform = np.log2(26)  # = 4.7 bits
 
 # Actual English
 H_english = 1.5  # bits (approximately)
@@ -425,34 +471,61 @@ redundancy = 1 - (H_english / H_uniform)
 print(f"Maximum entropy: {H_uniform:.2f} bits")
 print(f"Actual entropy: {H_english:.2f} bits")
 print(f"Redundancy: {redundancy:.1%}")
-# Redundancy ≈ 68% - English is highly predictable!
+# Redundancy ~ 68% - English is highly predictable!
 ```
 
-### Exercise 3: Conditional Entropy
+This is why compression works so well on English text — and why language models can predict the next token with surprising accuracy. The low entropy means there's a LOT of structure to exploit.
+
+### Exercise 3: Information Gain Calculation
+
 **Problem**: You have a dataset with class balance [0.7, 0.3]. After splitting on a feature, the two groups have class balances [0.9, 0.1] and [0.3, 0.7] with equal size. Calculate the information gain.
 
 **Solution**:
 ```python
 # Before split
-H_before = binary_entropy(0.7)  # ≈ 0.881 bits
+H_before = binary_entropy(0.7)  # = 0.881 bits
 
 # After split (equal-sized groups)
-H_group1 = binary_entropy(0.9)  # ≈ 0.469 bits
-H_group2 = binary_entropy(0.3)  # ≈ 0.881 bits
-H_after = 0.5 * H_group1 + 0.5 * H_group2  # ≈ 0.675 bits
+H_group1 = binary_entropy(0.9)  # = 0.469 bits
+H_group2 = binary_entropy(0.3)  # = 0.881 bits
+H_after = 0.5 * H_group1 + 0.5 * H_group2  # = 0.675 bits
 
-info_gain = H_before - H_after  # ≈ 0.206 bits
+info_gain = H_before - H_after  # = 0.206 bits
 print(f"Information gain: {info_gain:.3f} bits")
+```
+
+### Exercise 4: Genre Prediction Entropy
+
+**Problem**: Your genre classifier outputs $[0.4, 0.3, 0.2, 0.1]$ for a given song. Compute the entropy in bits, compare it to the maximum possible, and decide whether this prediction is "confident enough" to act on (threshold: normalized entropy below 0.5).
+
+**Solution**:
+```python
+probs = [0.4, 0.3, 0.2, 0.1]
+H = entropy(probs, base='2')       # = 1.846 bits
+H_max = np.log2(4)                  # = 2.0 bits
+normalized = H / H_max              # = 0.923
+
+print(f"Entropy: {H:.3f} bits")
+print(f"Normalized: {normalized:.3f}")
+print(f"Confident enough? {'Yes' if normalized < 0.5 else 'No'}")
+# Normalized entropy 0.923 > 0.5 — NOT confident enough.
+# The model is almost as uncertain as random guessing.
 ```
 
 ## Summary
 
 - **Shannon entropy** is the expected self-information: $H(X) = -\sum P(x) \log P(x)$
-- **Interpretation**: Average uncertainty or average surprise
-- **Maximum entropy** is achieved by uniform distributions
-- **Zero entropy** means complete certainty
+- **Interpretation**: Average uncertainty, average surprise, expected information content
+- **Maximum entropy** is achieved by uniform distributions: $H_{max} = \log n$
+- **Zero entropy** means complete certainty — only one outcome is possible
 - **Binary entropy** peaks at $p=0.5$ with $H=1$ bit
-- **ML applications**: Decision trees, confidence estimation, exploration in RL
+- **Properties**: Non-negative, maximized by uniform, additive for independent variables, chain rule
+- **SWE connections**: Compression lower bounds, decision tree splits, password strength, RNG quality
+- **ML applications**: Decision trees (information gain), model confidence (softmax entropy), exploration in RL (entropy bonus), active learning (query high-entropy samples)
 - **Units**: Bits (log base 2) or nats (natural log)
 
-Entropy tells us about the inherent uncertainty in a single distribution. But in ML, we often want to compare our model's distribution to the true distribution. That's where cross-entropy comes in—our next topic.
+**Genre prediction takeaway**: a model that outputs uniform $[0.25, 0.25, 0.25, 0.25]$ has maximum entropy (2 bits) and has learned nothing. A confident model outputting $[0.9, 0.05, 0.03, 0.02]$ has low entropy (~0.6 bits) and is making a strong, actionable prediction.
+
+## What Comes Next
+
+Entropy measures uncertainty within one distribution. But how do you compare two distributions? Cross-entropy measures how well distribution $Q$ approximates distribution $P$ — and it turns out to be the loss function you've been minimizing every time you train a classifier.

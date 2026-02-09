@@ -1,80 +1,42 @@
 # Chapter 4: KL Divergence
 
-## Intuition
+> Cross-entropy measures total coding cost. KL divergence isolates the excess cost — the part that comes purely from using the wrong distribution.
 
-Imagine you're a detective comparing two suspects' alibis. One claims to be at home (their story, Q), but evidence suggests they were at the crime scene (the truth, P). **KL divergence** measures how much the evidence contradicts the alibi—how "wrong" the suspect's story is compared to reality.
+---
 
-Formally, **Kullback-Leibler divergence** (also called relative entropy) measures the information lost when we use distribution Q to approximate distribution P. It quantifies the "distance" between two probability distributions—though, as we'll see, it's not a true distance metric.
+## The Problem You Already Have
 
-### Real-World Analogies
+Your VAE's loss has a term you might not fully understand: D_KL(q(z|x) || p(z)). It measures how far your encoder's distribution is from the prior. KL divergence is the universal yardstick for "how different are these two distributions?" — and it shows up everywhere from VAEs to policy gradient methods to knowledge distillation.
 
-**Compression Inefficiency:**
-- Optimal code for English text uses word frequencies from English (P)
-- Using frequencies from French (Q) to encode English wastes bits
-- KL divergence = extra bits wasted
+Here is the core question: **How do you measure the distance between two distributions?**
 
-**Map vs Territory:**
-- P is the actual terrain
-- Q is your map
-- KL divergence measures how much your map misleads you
+Think about it concretely. You are building a movie recommendation VAE. Your encoder takes a user's watch history and outputs a distribution over a latent space — a compressed "user embedding." The prior says that embedding should look like a standard normal. But your encoder might output something shifted, or too narrow, or too wide. You need a number that tells you: how far off is my encoder from the prior?
 
-**Model vs Reality:**
-- P is how customers actually behave
-- Q is what your recommendation model predicts
-- High KL divergence = model doesn't understand customers
+That number is KL divergence.
 
-### Why This Matters for ML
+---
 
-KL divergence is everywhere in modern ML:
-- **VAEs**: The regularization term is KL divergence to a prior
-- **Knowledge distillation**: Match student distribution to teacher
-- **Policy gradient**: Constrain policy updates (PPO, TRPO)
-- **Bayesian inference**: Variational inference minimizes KL to posterior
-- **Information bottleneck**: Trade-off between compression and prediction
+## Running Example: VAE on Movie Preferences
 
-Understanding KL divergence helps you grasp what these algorithms are really optimizing.
+Throughout this chapter, we will use a single scenario. You are building a VAE that learns user embeddings from movie ratings. Each user gets encoded into a latent vector z. The encoder outputs q(z|x) — a Gaussian with learned mean and variance for each user. The prior is p(z) = N(0, 1).
 
-## Visual Explanation
+The **KL term pushes the learned user embedding toward a standard normal prior.** Without it, your encoder would memorize each user as a point in space (overfitting). With it, similar users cluster together, and you can sample new "synthetic users" from the prior to generate recommendations.
 
-### Asymmetry of KL Divergence
+Every formula in this chapter connects back to this: what happens to the KL term as your encoder's output drifts away from the prior?
 
-```mermaid
-graph LR
-    subgraph "KL Divergence is Asymmetric"
-    P["Distribution P<br/>(Reality)"]
-    Q["Distribution Q<br/>(Model)"]
-    P -->|"D_KL(P||Q)"| Q
-    Q -->|"D_KL(Q||P)"| P
-    end
-```
+---
 
-**Important**: $D_{KL}(P\|Q) \neq D_{KL}(Q\|P)$ in general!
+## What KL Divergence Actually Measures
 
-### Visual: Forward vs Reverse KL
+**Kullback-Leibler divergence** (also called relative entropy) measures the information lost when you use distribution Q to approximate distribution P. In code terms, it is the extra bits you waste by using the wrong codebook.
 
-Consider fitting a single Gaussian Q to a mixture of two Gaussians P:
+Here is the analogy that sticks. You are running an A/B test on your movie app. Group A users click in a pattern described by distribution P. Group B users click in a pattern described by distribution Q. KL divergence tells you how many extra bits you would waste if you designed your data pipeline assuming Group B's behavior but Group A is what is actually happening. It is the cost of the mismatch — nothing more, nothing less.
 
-```
-Forward KL: D_KL(P||Q) - "Mean-seeking"
-        P (bimodal)          Q (fitted)
-         __   __              ___
-        /  \ /  \     →      /   \
-       /    X    \          /     \
-      /           \        /       \
-    Fitted Q covers both modes (may be too wide)
+> **Common Mistake**: KL divergence is NOT symmetric: D_KL(P||Q) != D_KL(Q||P). It's not a true distance metric. Think of it this way: the cost of assuming Q when the truth is P is different from the cost of assuming P when the truth is Q. Just like the cost of bringing a winter coat to the tropics is not the same as bringing a swimsuit to the Arctic.
 
-Reverse KL: D_KL(Q||P) - "Mode-seeking"
-        P (bimodal)          Q (fitted)
-         __   __              __
-        /  \ /  \     →      /  \
-       /    X    \          /    \
-      /           \
-    Fitted Q locks onto one mode (ignores the other)
-```
+---
 
-This asymmetry has profound implications for how different algorithms behave.
-
-## Mathematical Foundation
+## The Formulas
 
 ### Definition: KL Divergence
 
@@ -83,9 +45,12 @@ For discrete distributions P and Q over the same support:
 $$D_{KL}(P \| Q) = \sum_{x} P(x) \log \frac{P(x)}{Q(x)} = \mathbb{E}_{x \sim P}\left[\log \frac{P(x)}{Q(x)}\right]$$
 
 Equivalently:
+
 $$D_{KL}(P \| Q) = H(P, Q) - H(P)$$
 
-KL divergence is cross-entropy minus entropy—the "extra bits" beyond the minimum.
+KL divergence is cross-entropy minus entropy — the "extra bits" beyond the minimum. In the previous chapter, you saw that cross-entropy H(P, Q) measures the total coding cost of using Q to encode data from P. Entropy H(P) is the theoretical minimum. KL divergence is the gap.
+
+Back to your movie VAE: if your encoder perfectly matched the prior, the KL term would be zero. Every deviation from the prior shows up as excess bits in this term.
 
 ### Properties of KL Divergence
 
@@ -96,25 +61,99 @@ KL divergence is cross-entropy minus entropy—the "extra bits" beyond the minim
    - Therefore, not a true distance metric
 
 3. **Not satisfying triangle inequality**: Can have $D_{KL}(P \| R) > D_{KL}(P \| Q) + D_{KL}(Q \| R)$
-   - Another reason it's not a metric
+   - Another reason it is not a metric
 
 4. **Convexity**: $D_{KL}(P \| Q)$ is convex in the pair (P, Q)
 
 5. **Invariance**: Under invertible transformations of the random variable
 
-### Forward vs Reverse KL
+---
 
-**Forward KL**: $D_{KL}(P \| Q)$ — used when P is the data, Q is the model
+## ASCII Visualization: KL Divergence as Area Between Curves
+
+KL divergence is the expected log-ratio of the two distributions, weighted by P. You can visualize it as the "area" of discrepancy between P and Q, where regions with high P(x) matter most:
+
+```
+  Probability
+  density
+    |
+0.4 |        * *
+    |       *   *           KL divergence corresponds to
+    |      *     *          the weighted gap between these
+0.3 |   P *   .   *        two curves, where P does the
+    |    *  .   .  *        weighting.
+    |   * .       . *
+0.2 |  *.     Q     .*         P = true distribution (solid *)
+    | *.  . .   . .  .*        Q = model distribution (dots .)
+    |*  ..         ..  *
+0.1 |  ..             ..    Areas where P is high but Q is low
+    |..                 ..  contribute the most to KL divergence.
+    |.                   .
+0.0 +--+--+--+--+--+--+--+---> x
+   -4  -3  -2  -1   0   1   2   3
+
+  D_KL(P || Q) = Sum over x of P(x) * log(P(x) / Q(x))
+
+  Where P(x) >> Q(x):  log(P/Q) is large and positive  --> big penalty
+  Where P(x) << Q(x):  log(P/Q) is negative, but P(x) is small --> small contribution
+  Where P(x) ~= Q(x):  log(P/Q) ~ 0                    --> no penalty
+```
+
+The key insight: KL divergence cares most about regions where P is large. If P puts probability mass somewhere Q does not, you get a huge (or infinite) penalty. If Q puts extra mass where P does not, that barely matters. This asymmetry is the source of all the forward-vs-reverse KL behavior.
+
+---
+
+## Forward vs Reverse KL: Mode-Covering vs Mode-Seeking
+
+This is the single most important practical distinction in KL divergence. It determines which algorithm you should use and what failure modes you will see.
+
+### Forward KL: D_KL(P || Q) — Mean-Seeking / Mode-Covering
+
 - Penalizes Q heavily when Q(x) is small but P(x) is large
-- "Zero-avoiding" or "mean-seeking"
-- Q tries to cover all of P's support
+- "Zero-avoiding" — Q tries to cover all of P's support
+- Used when P is the data, Q is the model
 
-**Reverse KL**: $D_{KL}(Q \| P)$ — used in variational inference
+### Reverse KL: D_KL(Q || P) — Mode-Seeking
+
 - Penalizes Q heavily when Q(x) is large but P(x) is small
-- "Zero-forcing" or "mode-seeking"
-- Q collapses onto high-probability regions of P
+- "Zero-forcing" — Q collapses onto high-probability regions of P
+- Used in variational inference
 
-### KL Divergence for Gaussians
+```
+Forward KL: D_KL(P || Q) - "Mode-covering / Mean-seeking"
+        P (bimodal)          Q (fitted)
+         __   __              ___
+        /  \ /  \     -->    /   \
+       /    X    \          /     \
+      /           \        /       \
+    Fitted Q covers both modes (may be too wide)
+
+Reverse KL: D_KL(Q || P) - "Mode-seeking"
+        P (bimodal)          Q (fitted)
+         __   __              __
+        /  \ /  \     -->    /  \
+       /    X    \          /    \
+      /           \
+    Fitted Q locks onto one mode (ignores the other)
+```
+
+### The SWE Bridge: Optimistic vs Pessimistic Load Balancing
+
+Forward vs reverse KL maps directly to a systems design intuition you already have.
+
+**Forward KL is like pessimistic (conservative) load balancing.** You spread your capacity across every server that might get traffic. You cover all modes. Some capacity is wasted in valleys between peaks, but you never get caught with zero capacity where traffic is high. You would rather be too wide than miss anything.
+
+**Reverse KL is like optimistic (aggressive) load balancing.** You concentrate capacity on the single busiest server. You lock onto one mode and serve it perfectly. You are efficient where you operate, but you completely ignore other traffic sources. You would rather be precise than comprehensive.
+
+When you choose between variational inference (reverse KL) and maximum likelihood (forward KL), you are choosing between these two strategies.
+
+### Movie VAE Example
+
+In your movie VAE, the KL term uses forward KL: D_KL(q(z|x) || p(z)). The encoder q(z|x) is being compared against the prior p(z) = N(0, 1). This pushes the encoder to cover the prior's support — it should not create weird isolated clusters that the prior would never sample from. If you used reverse KL here, the encoder might ignore entire regions of the prior, making generation from the prior unreliable.
+
+---
+
+## KL Divergence for Gaussians
 
 For two univariate Gaussians $P = \mathcal{N}(\mu_1, \sigma_1^2)$ and $Q = \mathcal{N}(\mu_2, \sigma_2^2)$:
 
@@ -124,16 +163,108 @@ For multivariate Gaussians $P = \mathcal{N}(\boldsymbol{\mu}_1, \boldsymbol{\Sig
 
 $$D_{KL}(P \| Q) = \frac{1}{2}\left[\log \frac{|\boldsymbol{\Sigma}_2|}{|\boldsymbol{\Sigma}_1|} - d + \text{tr}(\boldsymbol{\Sigma}_2^{-1}\boldsymbol{\Sigma}_1) + (\boldsymbol{\mu}_2 - \boldsymbol{\mu}_1)^T \boldsymbol{\Sigma}_2^{-1}(\boldsymbol{\mu}_2 - \boldsymbol{\mu}_1)\right]$$
 
-### VAE Loss: The ELBO
+This closed-form Gaussian KL is why VAEs almost always use Gaussian encoders and a Gaussian prior. You get an exact, differentiable KL term for free. No sampling, no approximation.
 
-The VAE objective (Evidence Lower BOund):
+### Movie VAE: What the Encoder Outputs Mean
+
+Your encoder outputs mu and log_var for each user. Here is what happens to the KL term:
+
+| Encoder Output | mu | sigma | KL to N(0,1) | Interpretation |
+|---|---|---|---|---|
+| Perfect prior match | 0.0 | 1.0 | 0.000 | User embedding equals the prior — no information encoded |
+| Shifted mean | 1.0 | 1.0 | 0.500 | User is "displaced" from average — encodes preference info |
+| Narrow variance | 0.0 | 0.61 | 0.197 | Encoder is too confident about this user |
+| Shifted + narrow | 2.0 | 0.61 | 2.197 | Lots of user-specific info — KL penalty is high |
+
+The KL penalty increases when the encoder tries to encode more information about a specific user. This is the tension at the heart of VAEs: reconstruction wants more info, KL wants less.
+
+---
+
+## The ELBO: VAE Training Objective Decomposed
+
+The VAE objective (Evidence Lower BOund) is the equation you see in every VAE tutorial:
 
 $$\mathcal{L}_{ELBO} = \mathbb{E}_{q(z|x)}[\log p(x|z)] - D_{KL}(q(z|x) \| p(z))$$
 
-- First term: Reconstruction quality
-- Second term: KL divergence between approximate posterior and prior (usually $\mathcal{N}(0, I)$)
+- **First term: Reconstruction quality.** "How well can the decoder reconstruct the input from the latent code?" In your movie VAE, this is: given the user embedding z, how accurately can you predict their ratings?
+- **Second term: KL regularization.** "How close is the encoder's output to the prior?" This is the KL divergence you have been studying. It prevents the encoder from cheating by memorizing each user.
 
-## Code Example
+The full VAE loss makes this explicit:
+
+$$\mathcal{L} = \underbrace{-\mathbb{E}_{q(z|x)}[\log p(x|z)]}_{\text{Reconstruction loss}} + \underbrace{D_{KL}(q(z|x) \| p(z))}_{\text{KL regularization}}$$
+
+The ELBO is also connected to variational inference more broadly. When you cannot compute the true posterior p(z|x) exactly, you approximate it with q(z|x) and minimize their KL divergence. Maximizing the ELBO is equivalent to minimizing D_KL(q(z|x) || p(z|x)):
+
+$$q^*(z) = \arg\min_q D_{KL}(q(z) \| p(z|x))$$
+
+---
+
+## Mutual Information: Dependency Between Features
+
+Mutual information is KL divergence applied to the question: "how dependent are two random variables?"
+
+$$I(X; Y) = D_{KL}(P(X, Y) \| P(X) P(Y))$$
+
+It measures the KL divergence between the joint distribution and the product of the marginals. If X and Y are independent, P(X, Y) = P(X)P(Y), so the KL is zero. The more dependent they are, the higher the mutual information.
+
+### SWE Bridge: Feature Dependency
+
+In feature engineering, you often want to know: does feature A carry information about feature B? Mutual information answers this directly. Unlike correlation, it captures nonlinear dependencies too.
+
+In your movie VAE, mutual information I(X; Z) measures how much information the latent embedding Z retains about the original ratings X. The information bottleneck framework explicitly trades off this quantity:
+
+$$\min_{q(z|x)} D_{KL}(q(z|x) \| r(z)) - \beta \cdot I(Z; Y)$$
+
+More compression (lower I(X; Z)) means less overfitting. More prediction (higher I(Z; Y)) means better recommendations. The beta parameter controls the trade-off.
+
+---
+
+## KL Divergence as an A/B Test Metric
+
+Here is a SWE application you can use tomorrow. You are running an A/B test on your movie app. You have the distribution of user click patterns in Group A and Group B. Instead of comparing means (t-test) or proportions (chi-squared), you can measure the KL divergence between the two behavioral distributions.
+
+Why would you do this? Because KL divergence captures the full distributional difference, not just the mean. Two groups could have the same mean click rate but very different distributions — one group might be bimodal (power users and lurkers) while the other is uniform. KL divergence catches this; a t-test does not.
+
+```python
+import numpy as np
+
+# Click-through distributions for two A/B test groups
+group_a_clicks = np.array([0.05, 0.10, 0.35, 0.30, 0.15, 0.05])  # Sessions with 0-5 clicks
+group_b_clicks = np.array([0.15, 0.25, 0.25, 0.20, 0.10, 0.05])  # Modified UI
+
+kl_ab = np.sum(group_a_clicks * np.log(group_a_clicks / group_b_clicks))
+kl_ba = np.sum(group_b_clicks * np.log(group_b_clicks / group_a_clicks))
+
+print(f"D_KL(A || B) = {kl_ab:.4f} nats")  # Cost of assuming B when truth is A
+print(f"D_KL(B || A) = {kl_ba:.4f} nats")  # Cost of assuming A when truth is B
+print(f"These differ because KL is asymmetric!")
+```
+
+---
+
+## ML Applications
+
+### Policy Optimization (PPO, TRPO)
+
+In reinforcement learning, you constrain policy updates using KL divergence:
+
+$$\max_\theta \mathbb{E}\left[\frac{\pi_\theta(a|s)}{\pi_{\theta_{old}}(a|s)} A(s, a)\right] \quad \text{s.t.} \quad D_{KL}(\pi_{\theta_{old}} \| \pi_\theta) \leq \delta$$
+
+This prevents catastrophically large policy changes. If you let your recommendation policy change too much in one update, your movie suggestions go from sensible to bizarre. The KL constraint says: "update the policy, but keep the new action distribution close to the old one."
+
+This is another forward-vs-reverse KL choice. TRPO uses forward KL (constraining how much the old policy diverges from the new), which is mode-covering — it ensures the new policy does not drop probability from any action the old policy considered viable.
+
+### Knowledge Distillation
+
+Transfer knowledge from a large teacher model to a small student model:
+
+$$\mathcal{L} = (1-\alpha) \cdot CE(y, p_s) + \alpha \cdot T^2 \cdot D_{KL}(p_t^{(T)} \| p_s^{(T)})$$
+
+Where $p^{(T)}$ are temperature-softened probabilities. The KL term forces the student to match the teacher's full output distribution, not just the hard labels. A teacher model might say "this movie is 70% drama, 20% thriller, 10% romance." The KL term makes the student learn those soft relationships, not just "drama."
+
+---
+
+## Code Implementation
 
 ```python
 import numpy as np
@@ -306,8 +437,8 @@ plt.tight_layout()
 plt.savefig('forward_vs_reverse_kl.png', dpi=150)
 plt.show()
 
-# Example 5: VAE loss components
-print("=== VAE Loss: KL Term ===\n")
+# Example 5: VAE loss components — Movie Preferences
+print("=== VAE Loss: KL Term (Movie Preferences) ===\n")
 
 def kl_divergence_vae(mu, log_var):
     """
@@ -320,12 +451,12 @@ def kl_divergence_vae(mu, log_var):
     # = 0.5 * (sigma^2 + mu^2 - 1 - log(sigma^2))
     return 0.5 * (np.exp(log_var) + mu**2 - 1 - log_var)
 
-# Simulated encoder outputs
+# Simulated encoder outputs for different users
 latent_samples = [
-    (0.0, 0.0, "Perfect match to prior"),
-    (1.0, 0.0, "Shifted mean"),
-    (0.0, 1.0, "Larger variance"),
-    (2.0, -0.5, "Shifted mean, smaller variance"),
+    (0.0, 0.0, "Average user (matches prior)"),
+    (1.0, 0.0, "Action movie lover (shifted mean)"),
+    (0.0, 1.0, "Unpredictable taste (larger variance)"),
+    (2.0, -0.5, "Niche cinephile (shifted mean, smaller variance)"),
 ]
 
 print("KL divergence from encoder q(z|x) to prior N(0,1):\n")
@@ -402,85 +533,47 @@ Heavily biased:
   Q = ['0.400', '0.300', '0.150', '0.100', '0.030', '0.020']
   D_KL(P || Q) = 0.4389 nats
 
-=== VAE Loss: KL Term ===
+=== VAE Loss: KL Term (Movie Preferences) ===
 
 KL divergence from encoder q(z|x) to prior N(0,1):
 
-Perfect match to prior:
+Average user (matches prior):
   mu = 0.00, sigma = 1.00
   KL = 0.0000 nats
 
-Shifted mean:
+Action movie lover (shifted mean):
   mu = 1.00, sigma = 1.00
   KL = 0.5000 nats
 
-Larger variance:
+Unpredictable taste (larger variance):
   mu = 0.00, sigma = 1.65
   KL = 0.6065 nats
 ```
 
-## ML Relevance
+---
 
-### Variational Autoencoders (VAEs)
+## When to Use and When to Reach for Alternatives
 
-The VAE loss explicitly includes KL divergence:
+### When KL Divergence Is the Right Tool
 
-$$\mathcal{L} = \underbrace{-\mathbb{E}_{q(z|x)}[\log p(x|z)]}_{\text{Reconstruction loss}} + \underbrace{D_{KL}(q(z|x) \| p(z))}_{\text{KL regularization}}$$
-
-The KL term pushes the learned latent distribution toward the prior, enabling generation.
-
-### Variational Inference
-
-In Bayesian ML, we approximate intractable posteriors:
-
-$$q^*(z) = \arg\min_q D_{KL}(q(z) \| p(z|x))$$
-
-This is equivalent to maximizing the ELBO.
-
-### Policy Optimization (PPO, TRPO)
-
-Constrain policy updates using KL divergence:
-
-$$\max_\theta \mathbb{E}\left[\frac{\pi_\theta(a|s)}{\pi_{\theta_{old}}(a|s)} A(s, a)\right] \quad \text{s.t.} \quad D_{KL}(\pi_{\theta_{old}} \| \pi_\theta) \leq \delta$$
-
-This prevents catastrophically large policy changes.
-
-### Knowledge Distillation
-
-Transfer knowledge from teacher to student:
-
-$$\mathcal{L} = (1-\alpha) \cdot CE(y, p_s) + \alpha \cdot T^2 \cdot D_{KL}(p_t^{(T)} \| p_s^{(T)})$$
-
-Where $p^{(T)}$ are temperature-softened probabilities.
-
-### Information Bottleneck
-
-Trade off compression and prediction:
-
-$$\min_{q(z|x)} D_{KL}(q(z|x) \| r(z)) - \beta \cdot I(Z; Y)$$
-
-## When to Use / Ignore
-
-### When to Use KL Divergence
-
-- **VAE training**: The standard regularization term
-- **Distribution matching**: When you need to compare probability distributions
-- **Variational inference**: Approximating posteriors
-- **Policy constraints**: Limiting update sizes in RL
-- **Model comparison**: Which model better fits the data?
+- **VAE training**: The standard regularization term in the ELBO
+- **Distribution matching**: Comparing probability distributions in A/B tests, model evaluation
+- **Variational inference**: Approximating intractable posteriors
+- **Policy constraints**: Limiting update sizes in RL (PPO, TRPO)
+- **Knowledge distillation**: Matching student output to teacher output
 
 ### When to Consider Alternatives
 
 - **Need a true metric?** Use Jensen-Shannon divergence (symmetric) or Wasserstein distance
 - **Distributions have disjoint support?** KL can be infinite; use JS divergence or optimal transport
-- **Mode collapse issues?** Consider reverse KL or other divergences
+- **Mode collapse issues?** Consider reverse KL or other f-divergences
 - **Training GANs?** Original GAN uses JS divergence; Wasserstein GAN uses optimal transport
 
 ### Common Pitfalls
 
 1. **Infinite KL**: Occurs when Q(x) = 0 but P(x) > 0. Always smooth or clip.
 2. **Direction confusion**: $D_{KL}(P\|Q)$ vs $D_{KL}(Q\|P)$ have very different behaviors
-3. **Not a metric**: Can't use triangle inequality reasoning
+3. **Not a metric**: Cannot use triangle inequality reasoning
 4. **Numerical issues**: Log of small numbers; use log-sum-exp tricks
 
 ```python
@@ -491,6 +584,8 @@ kl = np.sum(p * np.log(p / q))  # q might be 0!
 q_safe = np.clip(q, 1e-10, 1)
 kl = np.sum(p * np.log(p / q_safe))
 ```
+
+---
 
 ## Exercises
 
@@ -522,11 +617,11 @@ sigma_sq = np.exp(log_var)
 
 # D_KL(N(mu, sigma^2) || N(0, 1)) = 0.5 * (sigma^2 + mu^2 - 1 - log(sigma^2))
 kl = 0.5 * (sigma_sq + mu**2 - 1 - log_var)
-print(f"KL = {kl:.4f} nats")  # ≈ 0.178 nats
+print(f"KL = {kl:.4f} nats")  # ~ 0.178 nats
 ```
 
 ### Exercise 3: Forward vs Reverse KL
-**Problem**: You're fitting a unimodal Gaussian to a bimodal mixture. Explain qualitatively what happens with forward KL vs reverse KL minimization.
+**Problem**: You are fitting a unimodal Gaussian to a bimodal mixture. Explain qualitatively what happens with forward KL vs reverse KL minimization.
 
 **Solution**:
 - **Forward KL** $D_{KL}(P_{bimodal} \| Q_{unimodal})$: Penalizes Q when it assigns low probability to regions where P is high. Result: Q becomes wide to cover both modes. The fitted Gaussian will have mean between the modes and large variance.
@@ -535,22 +630,47 @@ print(f"KL = {kl:.4f} nats")  # ≈ 0.178 nats
 
 Forward KL is "inclusive" (tries to cover everything), while reverse KL is "exclusive" (focuses on what it can model well).
 
+### Exercise 4: Movie VAE Trade-off
+**Problem**: Your movie recommendation VAE has two users. User A has mu=0.1, log_var=0.0 (mainstream taste). User B has mu=3.0, log_var=-1.0 (niche cinephile). Calculate the KL penalty for each. Which user does the model "struggle" to encode within the prior? What would happen if you increased the KL weight beta?
+
+**Solution**:
+```python
+# User A: mainstream
+kl_a = 0.5 * (np.exp(0.0) + 0.1**2 - 1 - 0.0)  # = 0.005 nats
+# User B: niche
+kl_b = 0.5 * (np.exp(-1.0) + 3.0**2 - 1 - (-1.0))  # = 5.184 nats
+
+print(f"User A KL: {kl_a:.3f} nats")  # Low — close to prior
+print(f"User B KL: {kl_b:.3f} nats")  # High — far from prior
+```
+
+User B is expensive to encode. Increasing beta would push User B's embedding closer to the prior, sacrificing reconstruction quality for that user — the model would lose its ability to represent niche preferences. This is the classic beta-VAE trade-off: higher beta means smoother latent space but worse reconstruction for outlier users.
+
+---
+
 ## Summary
+
+| Concept | Formula | What It Measures | Where You See It |
+|---------|---------|------------------|-----------------|
+| KL Divergence | $\sum P(x) \log \frac{P(x)}{Q(x)}$ | Excess coding cost | VAE, distillation, RL |
+| Forward KL | $D_{KL}(P \| Q)$ | Mode-covering fit | Maximum likelihood, A/B tests |
+| Reverse KL | $D_{KL}(Q \| P)$ | Mode-seeking fit | Variational inference |
+| ELBO | $\mathbb{E}[\log p(x|z)] - D_{KL}(q \| p)$ | VAE training objective | Generative models |
+| Mutual Information | $D_{KL}(P(X,Y) \| P(X)P(Y))$ | Feature dependency | Information bottleneck |
+
+Key takeaways:
 
 - **KL divergence** measures information lost when using Q to approximate P: $D_{KL}(P\|Q) = \sum P(x) \log \frac{P(x)}{Q(x)}$
 - **Non-negative**: Always $\geq 0$, equals 0 only when P = Q
 - **Asymmetric**: $D_{KL}(P\|Q) \neq D_{KL}(Q\|P)$ — this has major practical implications
-- **Forward KL** (mean-seeking): Q tries to cover all of P's support
+- **Forward KL** (mean-seeking / mode-covering): Q tries to cover all of P's support
 - **Reverse KL** (mode-seeking): Q collapses onto high-probability regions of P
-- **ML applications**: VAE regularization, variational inference, policy gradients, knowledge distillation
 - **Relationship**: $D_{KL}(P\|Q) = H(P, Q) - H(P)$ — the extra bits beyond entropy
-- **Caution**: Can be infinite when supports don't match
-
-KL divergence completes our information theory toolkit. Together with entropy and cross-entropy, these concepts form the mathematical backbone of modern machine learning—from the loss functions you use daily to the cutting-edge generative models pushing the boundaries of AI.
+- **Caution**: Can be infinite when supports do not match; always clip or smooth
 
 ---
 
-## Conclusion: The Information Theory Toolkit
+## The Information Theory Toolkit: Complete
 
 You now have four fundamental tools:
 
@@ -566,4 +686,4 @@ These build on each other:
 - Cross-entropy = Entropy + KL divergence
 - KL divergence = Cross-entropy - Entropy
 
-Master these, and you'll have deep insight into what your ML models are really optimizing.
+You've completed information theory. Entropy, cross-entropy, and KL divergence are the mathematical foundations of classification loss functions, generative models, and information-theoretic learning.

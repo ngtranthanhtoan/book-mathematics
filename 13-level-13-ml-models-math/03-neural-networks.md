@@ -1,205 +1,513 @@
 # Chapter 3: Neural Networks
 
-## Intuition
+## Building On
 
-Neural networks are the workhorses of modern machine learning. At their mathematical core, they are simply **compositions of simple functions**, where each layer applies a linear transformation followed by a nonlinear activation. The magic of backpropagation is nothing more than the **chain rule of calculus** applied systematically.
+Logistic regression is one layer with sigmoid. What if you stack multiple layers? You get a neural network -- a universal function approximator that can learn any continuous mapping.
 
-### Plain English Explanation
+---
 
-Imagine trying to recognize handwritten digits. A single linear function (like logistic regression) can only draw straight decision boundaries, but the patterns in images are complex and nonlinear. Neural networks stack multiple transformations together: each layer takes the previous layer's output, combines it linearly, then applies a nonlinearity. This composition of simple functions can approximate arbitrarily complex functions.
+A neural network is just function composition with learned parameters. Layer 1: h₁ = σ(W₁x + b₁). Layer 2: h₂ = σ(W₂h₁ + b₂). Output: ŷ = W₃h₂ + b₃. That's it. Three matrix multiplications, two nonlinearities, and you have a universal function approximator. The magic isn't in the architecture -- it's in the training: backpropagation, which is just the chain rule applied systematically.
 
-### Real-World Analogy
+In this chapter, you will build up from a single neuron to a full network, trace a forward pass with real numbers, derive backpropagation from the chain rule, and walk every gradient through an MNIST digit classifier. By the end, none of this will feel like a black box.
 
-Think of a neural network like an assembly line in a factory. Raw materials (inputs) enter at one end. At each station (layer), workers (neurons) perform operations on the materials, transforming them step by step. The final station produces the finished product (prediction). Training the network is like optimizing each worker's procedures so the final product matches what customers want.
+---
 
-### Why This Matters for ML
+## You Already Know This
 
-- **Universal Approximation**: Neural networks can approximate any continuous function
-- **Feature Learning**: Unlike traditional ML, networks learn representations automatically
-- **Scalability**: Modern deep learning scales with data and compute
-- **Foundation for AI**: Transformers, CNNs, RNNs - all are variations of this theme
+You work with these patterns every day. Neural networks map directly onto concepts you use in production code.
 
-## Visual Explanation
+| Neural Network Concept | Software Engineering Analogy |
+|------------------------|------------------------------|
+| Neural network | A pipeline of transformations (like middleware layers in a web server) |
+| Forward pass | Calling the function: input goes through each layer sequentially |
+| Backward pass (backprop) | Reverse-mode autodiff: computing gradients by walking the computational graph backward |
+| Computational graph | A DAG of operations, like a build dependency graph |
+| Weights and biases | Configuration parameters tuned by an optimizer instead of a human |
+| Loss function | Your test suite's error metric -- how far off are you from correct? |
 
-### Network Architecture
+Think of it this way: a web request hits your server and passes through authentication middleware, then validation middleware, then business logic, then serialization. Each middleware transforms the data and passes it forward. A neural network does the same thing -- each layer transforms activations and passes them to the next. Training is like running an automated optimizer that adjusts every middleware's configuration to minimize errors on your test suite.
 
-```mermaid
-graph LR
-    subgraph "Input Layer"
-        X1[x₁]
-        X2[x₂]
-        X3[x₃]
-    end
+---
 
-    subgraph "Hidden Layer 1"
-        H11[h₁⁽¹⁾]
-        H12[h₂⁽¹⁾]
-        H13[h₃⁽¹⁾]
-        H14[h₄⁽¹⁾]
-    end
+## Part 1: The Single Neuron
 
-    subgraph "Hidden Layer 2"
-        H21[h₁⁽²⁾]
-        H22[h₂⁽²⁾]
-    end
+Before you build a network, understand the building block. A single neuron takes inputs, applies weights, adds a bias, and passes the result through an activation function.
 
-    subgraph "Output Layer"
-        Y[ŷ]
-    end
-
-    X1 --> H11
-    X1 --> H12
-    X1 --> H13
-    X1 --> H14
-    X2 --> H11
-    X2 --> H12
-    X2 --> H13
-    X2 --> H14
-    X3 --> H11
-    X3 --> H12
-    X3 --> H13
-    X3 --> H14
-
-    H11 --> H21
-    H11 --> H22
-    H12 --> H21
-    H12 --> H22
-    H13 --> H21
-    H13 --> H22
-    H14 --> H21
-    H14 --> H22
-
-    H21 --> Y
-    H22 --> Y
+```
+    x₁ ──w₁──┐
+              │
+    x₂ ──w₂──┤──► Σ(wᵢxᵢ + b) ──► σ(z) ──► output
+              │
+    x₃ ──w₃──┘
 ```
 
-### Forward Pass: Function Composition
+Mathematically:
 
-For a 2-layer network:
+$$z = \mathbf{w}^T \mathbf{x} + b = w_1 x_1 + w_2 x_2 + w_3 x_3 + b$$
 
-$$\hat{y} = f(\mathbf{x}) = \sigma_2(\mathbf{W}^{(2)} \cdot \sigma_1(\mathbf{W}^{(1)} \cdot \mathbf{x} + \mathbf{b}^{(1)}) + \mathbf{b}^{(2)})$$
+$$a = \sigma(z)$$
 
-This is a composition: $f = \sigma_2 \circ g_2 \circ \sigma_1 \circ g_1$ where each $g_i$ is an affine transformation.
+That is it. A weighted sum followed by a nonlinearity. If $\sigma$ is the sigmoid function, this is exactly logistic regression. One neuron = one logistic regression unit.
 
-### Backpropagation Flow
+---
 
-```mermaid
-graph RL
-    subgraph "Forward Pass →"
-        X[Input x] --> Z1[z⁽¹⁾ = W⁽¹⁾x + b⁽¹⁾]
-        Z1 --> A1[a⁽¹⁾ = σ₁ z⁽¹⁾]
-        A1 --> Z2[z⁽²⁾ = W⁽²⁾a⁽¹⁾ + b⁽²⁾]
-        Z2 --> A2[a⁽²⁾ = σ₂ z⁽²⁾]
-        A2 --> L[Loss L]
-    end
+## Part 2: From Neuron to Layer
 
-    subgraph "← Backward Pass"
-        L --> |"∂L/∂a⁽²⁾"| A2
-        A2 --> |"∂a⁽²⁾/∂z⁽²⁾"| Z2
-        Z2 --> |"∂z⁽²⁾/∂W⁽²⁾"| DW2[∇W⁽²⁾L]
-        Z2 --> |"∂z⁽²⁾/∂a⁽¹⁾"| A1
-        A1 --> |"∂a⁽¹⁾/∂z⁽¹⁾"| Z1
-        Z1 --> |"∂z⁽¹⁾/∂W⁽¹⁾"| DW1[∇W⁽¹⁾L]
-    end
+A layer is just multiple neurons operating in parallel on the same input. Instead of one weight vector, you have a weight matrix where each row is one neuron's weights.
+
+```
+              Layer (4 neurons)
+              ┌──────────────┐
+    x₁ ───►  │  n₁  n₂  n₃  n₄  │ ──► [a₁, a₂, a₃, a₄]
+    x₂ ───►  │  (each neuron │
+    x₃ ───►  │   sees all    │
+              │   inputs)     │
+              └──────────────┘
 ```
 
-## Mathematical Foundation
+For a layer with $n_{in}$ inputs and $n_{out}$ neurons:
 
-### Notation
+$$\mathbf{z} = \mathbf{W}\mathbf{x} + \mathbf{b}$$
 
-| Symbol | Meaning |
-|--------|---------|
-| $\mathbf{x}$ | Input vector |
-| $\mathbf{W}^{(l)}$ | Weight matrix for layer $l$ |
-| $\mathbf{b}^{(l)}$ | Bias vector for layer $l$ |
-| $\mathbf{z}^{(l)}$ | Pre-activation at layer $l$ |
-| $\mathbf{a}^{(l)}$ | Activation (post-nonlinearity) at layer $l$ |
-| $\sigma_l$ | Activation function at layer $l$ |
-| $L$ | Loss function |
+where $\mathbf{W}$ is an $n_{out} \times n_{in}$ matrix, $\mathbf{b}$ is an $n_{out} \times 1$ bias vector, and $\mathbf{z}$ is the $n_{out} \times 1$ pre-activation vector.
 
-### Forward Pass Equations
+Then apply the activation element-wise:
 
-For layer $l$:
+$$\mathbf{a} = \sigma(\mathbf{z})$$
+
+That is one layer. A matrix multiply, a vector add, and an element-wise nonlinearity.
+
+---
+
+## Part 3: From Layer to Network
+
+Stack layers. Feed the output of one layer as input to the next. This is function composition -- the same pattern you use when piping Unix commands or chaining middleware.
+
+### ASCII Architecture: 3-Layer Network
+
+```
+  INPUT          HIDDEN 1        HIDDEN 2        OUTPUT
+  LAYER          (4 neurons)     (3 neurons)     (2 neurons)
+
+  x₁ ─────┬────► h₁⁽¹⁾ ───┬────► h₁⁽²⁾ ───┬────► ŷ₁
+           │      │          │      │          │
+  x₂ ─────┼────► h₂⁽¹⁾ ───┼────► h₂⁽²⁾ ───┼────► ŷ₂
+           │      │          │      │          │
+  x₃ ─────┼────► h₃⁽¹⁾ ───┼────► h₃⁽²⁾ ───┘
+           │      │          │
+           └────► h₄⁽¹⁾ ───┘
+
+  (every input    (every h⁽¹⁾    (every h⁽²⁾
+   connects to     connects to    connects to
+   every h⁽¹⁾)    every h⁽²⁾)   every output)
+
+  Dimensions:     Dimensions:     Dimensions:
+  W₁: 4×3         W₂: 3×4        W₃: 2×3
+  b₁: 4×1         b₂: 3×1        b₃: 2×1
+```
+
+The forward pass equations, layer by layer:
+
+$$\mathbf{z}^{(1)} = \mathbf{W}^{(1)} \mathbf{x} + \mathbf{b}^{(1)}, \quad \mathbf{a}^{(1)} = \sigma_1(\mathbf{z}^{(1)})$$
+
+$$\mathbf{z}^{(2)} = \mathbf{W}^{(2)} \mathbf{a}^{(1)} + \mathbf{b}^{(2)}, \quad \mathbf{a}^{(2)} = \sigma_2(\mathbf{z}^{(2)})$$
+
+$$\mathbf{z}^{(3)} = \mathbf{W}^{(3)} \mathbf{a}^{(2)} + \mathbf{b}^{(3)}, \quad \hat{\mathbf{y}} = \sigma_3(\mathbf{z}^{(3)})$$
+
+Or compactly, for any layer $l$:
 
 $$\mathbf{z}^{(l)} = \mathbf{W}^{(l)} \mathbf{a}^{(l-1)} + \mathbf{b}^{(l)}$$
 
 $$\mathbf{a}^{(l)} = \sigma_l(\mathbf{z}^{(l)})$$
 
-where $\mathbf{a}^{(0)} = \mathbf{x}$ (input).
+where $\mathbf{a}^{(0)} = \mathbf{x}$ (the input).
 
-### Common Activation Functions
+This is a composition: $f = \sigma_3 \circ g_3 \circ \sigma_2 \circ g_2 \circ \sigma_1 \circ g_1$ where each $g_l(\mathbf{v}) = \mathbf{W}^{(l)}\mathbf{v} + \mathbf{b}^{(l)}$ is an affine transformation.
 
-| Function | Formula | Derivative |
-|----------|---------|------------|
-| Sigmoid | $\sigma(z) = \frac{1}{1+e^{-z}}$ | $\sigma(z)(1-\sigma(z))$ |
-| Tanh | $\tanh(z) = \frac{e^z - e^{-z}}{e^z + e^{-z}}$ | $1 - \tanh^2(z)$ |
-| ReLU | $\max(0, z)$ | $\mathbf{1}_{z > 0}$ |
-| Softmax | $\frac{e^{z_i}}{\sum_j e^{z_j}}$ | $p_i(\delta_{ij} - p_j)$ |
+> **Common Mistake**: Without nonlinearities, stacking linear layers collapses to a single linear layer: $\mathbf{W}_3 \mathbf{W}_2 \mathbf{W}_1 \mathbf{x} = \mathbf{W}_{total} \cdot \mathbf{x}$. The activation functions are essential. No matter how many linear layers you stack, you can only represent linear functions. The nonlinearity after each layer is what gives networks their expressive power.
 
-### Loss Functions
+---
+
+## Part 4: Notation Reference
+
+Before you go further, here is the notation you will see throughout.
+
+| Symbol | Meaning |
+|--------|---------|
+| $\mathbf{x}$ | Input vector (also written $\mathbf{a}^{(0)}$) |
+| $\mathbf{W}^{(l)}$ | Weight matrix for layer $l$ |
+| $\mathbf{b}^{(l)}$ | Bias vector for layer $l$ |
+| $\mathbf{z}^{(l)}$ | Pre-activation at layer $l$: the result before the nonlinearity |
+| $\mathbf{a}^{(l)}$ | Activation (post-nonlinearity) at layer $l$ |
+| $\sigma_l$ | Activation function at layer $l$ |
+| $L$ | Total number of layers (not counting input) |
+| $\mathcal{L}$ | Loss function |
+| $\boldsymbol{\delta}^{(l)}$ | Error signal at layer $l$: $\partial \mathcal{L} / \partial \mathbf{z}^{(l)}$ |
+
+---
+
+## Part 5: Activation Functions
+
+Each activation introduces a different kind of nonlinearity. Here are the ones you will encounter most often.
+
+| Function | Formula | Derivative | When to Use |
+|----------|---------|------------|-------------|
+| Sigmoid | $\sigma(z) = \frac{1}{1+e^{-z}}$ | $\sigma(z)(1-\sigma(z))$ | Binary output layer |
+| Tanh | $\tanh(z) = \frac{e^z - e^{-z}}{e^z + e^{-z}}$ | $1 - \tanh^2(z)$ | Hidden layers (centered output) |
+| ReLU | $\max(0, z)$ | $\mathbf{1}_{z > 0}$ | Default for hidden layers |
+| Softmax | $\frac{e^{z_i}}{\sum_j e^{z_j}}$ | $p_i(\delta_{ij} - p_j)$ | Multi-class output layer |
+
+ReLU is the workhorse of modern networks. It is computationally cheap (just a threshold), its derivative is trivial (0 or 1), and it mitigates the vanishing gradient problem that plagues sigmoid and tanh in deep networks.
+
+---
+
+## Part 6: The Forward Pass -- Calling the Function
+
+The forward pass is straightforward. You feed input through each layer sequentially, exactly like calling a chain of functions.
+
+### ASCII Forward Pass Flow
+
+```
+  INPUT x          LAYER 1              LAYER 2              OUTPUT
+  ┌─────┐    ┌───────────────┐    ┌───────────────┐    ┌──────────┐
+  │     │    │ z⁽¹⁾=W⁽¹⁾x+b⁽¹⁾│    │ z⁽²⁾=W⁽²⁾a⁽¹⁾+b⁽²⁾│    │          │
+  │  x  │──►│               │──►│               │──►│   ŷ     │
+  │     │    │ a⁽¹⁾= σ₁(z⁽¹⁾) │    │ a⁽²⁾= σ₂(z⁽²⁾) │    │          │
+  └─────┘    └───────────────┘    └───────────────┘    └──────────┘
+                   │                     │
+                   ▼                     ▼
+              Cache z⁽¹⁾, a⁽¹⁾     Cache z⁽²⁾, a⁽²⁾
+              (needed for backprop) (needed for backprop)
+```
+
+The pseudocode:
+
+```
+Forward Pass:
+    a⁽⁰⁾ = x
+    for l = 1 to L:
+        z⁽ˡ⁾ = W⁽ˡ⁾ @ a⁽ˡ⁻¹⁾ + b⁽ˡ⁾
+        a⁽ˡ⁾ = activation_l(z⁽ˡ⁾)
+        cache z⁽ˡ⁾ and a⁽ˡ⁾    // you will need these for backprop
+    ŷ = a⁽ᴸ⁾
+    compute loss L(ŷ, y)
+```
+
+Notice the caching. During the forward pass you store every intermediate $\mathbf{z}^{(l)}$ and $\mathbf{a}^{(l)}$. This is the space-time tradeoff: you spend memory now to avoid recomputation during backpropagation. If you have ever memoized function calls to speed up a recursive algorithm, it is exactly the same idea.
+
+---
+
+## Part 7: The Loss Function -- Your Error Metric
+
+After the forward pass, you compare the prediction $\hat{\mathbf{y}}$ against the true label $\mathbf{y}$. The loss function quantifies "how wrong are we?"
 
 | Task | Loss | Formula |
 |------|------|---------|
 | Regression | MSE | $\frac{1}{n}\sum_i(y_i - \hat{y}_i)^2$ |
-| Binary Classification | Cross-Entropy | $-\frac{1}{n}\sum_i [y_i\log\hat{y}_i + (1-y_i)\log(1-\hat{y}_i)]$ |
-| Multi-class | Categorical CE | $-\frac{1}{n}\sum_i\sum_k y_{ik}\log\hat{y}_{ik}$ |
+| Binary Classification | Binary Cross-Entropy | $-\frac{1}{n}\sum_i [y_i\log\hat{y}_i + (1-y_i)\log(1-\hat{y}_i)]$ |
+| Multi-class Classification | Categorical Cross-Entropy | $-\frac{1}{n}\sum_i\sum_k y_{ik}\log\hat{y}_{ik}$ |
 
-### Backpropagation: The Chain Rule
+For the MNIST example you will work through shortly, you use categorical cross-entropy with softmax output. The softmax converts raw scores (logits) into probabilities that sum to 1, and the cross-entropy penalizes wrong predictions logarithmically -- being confidently wrong costs much more than being uncertain.
 
-The key insight is that the gradient of the loss with respect to any parameter can be computed by applying the chain rule:
+---
 
-$$\frac{\partial L}{\partial \mathbf{W}^{(l)}} = \frac{\partial L}{\partial \mathbf{a}^{(L)}} \cdot \frac{\partial \mathbf{a}^{(L)}}{\partial \mathbf{z}^{(L)}} \cdot \frac{\partial \mathbf{z}^{(L)}}{\partial \mathbf{a}^{(L-1)}} \cdots \frac{\partial \mathbf{z}^{(l)}}{\partial \mathbf{W}^{(l)}}$$
+## Part 8: The Backward Pass -- Reverse-Mode Autodiff
 
-### Deriving Backpropagation
+Here is where the math gets interesting. You need to compute how the loss changes with respect to every single weight and bias in the network. That is potentially millions of parameters. Backpropagation does this efficiently by walking the computational graph backward -- this is reverse-mode automatic differentiation.
 
-Define the "error" at layer $l$ as:
+### Why Backward, Not Forward?
 
-$$\boldsymbol{\delta}^{(l)} = \frac{\partial L}{\partial \mathbf{z}^{(l)}}$$
+You could compute gradients by nudging each parameter one at a time and measuring the change in loss. With $n$ parameters, that is $n$ forward passes. For a network with 1 million parameters, that is 1 million forward passes per training step. Unacceptable.
 
-**Output layer** (layer $L$):
+Backpropagation computes ALL gradients in one backward pass. The cost is roughly the same as one forward pass. This is why reverse-mode autodiff is so powerful -- and why frameworks like PyTorch and TensorFlow build computational graphs.
 
-For cross-entropy loss with softmax:
+### The Chain Rule -- The Core of Backpropagation
+
+The gradient of the loss with respect to any parameter can be decomposed using the chain rule:
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{(l)}} = \frac{\partial \mathcal{L}}{\partial \mathbf{a}^{(L)}} \cdot \frac{\partial \mathbf{a}^{(L)}}{\partial \mathbf{z}^{(L)}} \cdot \frac{\partial \mathbf{z}^{(L)}}{\partial \mathbf{a}^{(L-1)}} \cdots \frac{\partial \mathbf{z}^{(l)}}{\partial \mathbf{W}^{(l)}}$$
+
+Each factor in this product corresponds to one step backward through the network. You multiply local derivatives as you walk backward from the loss to the parameter you care about. It is exactly like traversing your build dependency graph in reverse to figure out which source file change caused a particular binary to differ.
+
+### Deriving Backpropagation Step by Step
+
+Define the "error signal" at layer $l$:
+
+$$\boldsymbol{\delta}^{(l)} = \frac{\partial \mathcal{L}}{\partial \mathbf{z}^{(l)}}$$
+
+This tells you: how much does the loss change if you perturb the pre-activation at layer $l$?
+
+**Step 1 -- Output layer error** (layer $L$):
+
+For categorical cross-entropy loss with softmax output, the math simplifies beautifully:
+
 $$\boldsymbol{\delta}^{(L)} = \mathbf{a}^{(L)} - \mathbf{y}$$
 
-**Hidden layers** (recursive):
+That is it. The error at the output layer is just prediction minus truth. This clean form is why softmax + cross-entropy is the standard combination for classification.
+
+**Step 2 -- Hidden layer errors** (recursive, from layer $L-1$ down to 1):
 
 $$\boldsymbol{\delta}^{(l)} = (\mathbf{W}^{(l+1)})^T \boldsymbol{\delta}^{(l+1)} \odot \sigma'_l(\mathbf{z}^{(l)})$$
 
-where $\odot$ denotes element-wise multiplication.
+where $\odot$ denotes element-wise (Hadamard) multiplication.
 
-**Parameter gradients**:
+Read this equation carefully. It says: take the error from the next layer, multiply it by the transpose of the weight matrix (projecting the error backward), then scale element-wise by the activation derivative. The weight transpose "routes" the error back to the neurons that caused it. The activation derivative tells you how sensitive each neuron's output was to its input.
 
-$$\frac{\partial L}{\partial \mathbf{W}^{(l)}} = \boldsymbol{\delta}^{(l)} (\mathbf{a}^{(l-1)})^T$$
+**Step 3 -- Parameter gradients**:
 
-$$\frac{\partial L}{\partial \mathbf{b}^{(l)}} = \boldsymbol{\delta}^{(l)}$$
+Once you have $\boldsymbol{\delta}^{(l)}$, the gradients for weights and biases are:
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{(l)}} = \boldsymbol{\delta}^{(l)} (\mathbf{a}^{(l-1)})^T$$
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{b}^{(l)}} = \boldsymbol{\delta}^{(l)}$$
+
+The weight gradient is an outer product of the error signal and the previous layer's activation. The bias gradient is just the error signal itself.
+
+### ASCII Backward Pass Flow
+
+```
+  LOSS ◄── OUTPUT          LAYER 2              LAYER 1
+           ┌──────────┐    ┌───────────────┐    ┌───────────────┐
+           │δ⁽²⁾=a⁽²⁾-y │    │               │    │               │
+     ◄─────│          │◄───│ δ⁽¹⁾=(W⁽²⁾)ᵀδ⁽²⁾│◄───│               │
+           │          │    │   ⊙ σ₁'(z⁽¹⁾)   │    │               │
+           └──────────┘    └───────────────┘    └───────────────┘
+                │                │                     │
+                ▼                ▼                     ▼
+           ∂L/∂W⁽²⁾        ∂L/∂W⁽¹⁾              (to input --
+           = δ⁽²⁾(a⁽¹⁾)ᵀ   = δ⁽¹⁾(x)ᵀ              no update
+           ∂L/∂b⁽²⁾        ∂L/∂b⁽¹⁾               needed)
+           = δ⁽²⁾          = δ⁽¹⁾
+```
 
 ### The Complete Algorithm
 
 ```
 Forward Pass:
+    a⁽⁰⁾ = x
     for l = 1 to L:
-        z^(l) = W^(l) @ a^(l-1) + b^(l)
-        a^(l) = activation(z^(l))
+        z⁽ˡ⁾ = W⁽ˡ⁾ @ a⁽ˡ⁻¹⁾ + b⁽ˡ⁾
+        a⁽ˡ⁾ = activation(z⁽ˡ⁾)
     compute loss L
 
 Backward Pass:
-    delta^(L) = gradient of loss w.r.t. z^(L)
+    δ⁽ᴸ⁾ = gradient of loss w.r.t. z⁽ᴸ⁾
     for l = L down to 1:
-        dW^(l) = delta^(l) @ a^(l-1).T
-        db^(l) = delta^(l)
+        dW⁽ˡ⁾ = δ⁽ˡ⁾ @ a⁽ˡ⁻¹⁾.T
+        db⁽ˡ⁾ = δ⁽ˡ⁾
         if l > 1:
-            delta^(l-1) = W^(l).T @ delta^(l) * activation_derivative(z^(l-1))
+            δ⁽ˡ⁻¹⁾ = W⁽ˡ⁾.T @ δ⁽ˡ⁾ * activation_derivative(z⁽ˡ⁻¹⁾)
 
 Update:
     for each parameter:
         param -= learning_rate * gradient
 ```
 
-### Universal Approximation Theorem
+---
 
-A feedforward network with a single hidden layer containing a finite number of neurons can approximate any continuous function on compact subsets of $\mathbb{R}^n$, under mild assumptions on the activation function.
+## Part 9: Running Example -- MNIST Digit Classifier
 
-**Implication**: Neural networks are **universal function approximators**. The question is not "can a network represent this function?" but "can we find the right weights?"
+Time to make this concrete. You are building a classifier that reads 28x28 pixel grayscale images of handwritten digits and outputs which digit (0-9) it sees.
+
+### Architecture
+
+```
+  INPUT              HIDDEN 1           HIDDEN 2           OUTPUT
+  784 neurons        256 neurons        128 neurons        10 neurons
+  (28×28 pixels)     (ReLU)             (ReLU)             (Softmax)
+
+  ┌─────────┐       ┌──────────┐       ┌──────────┐       ┌─────────┐
+  │ x₁      │       │ h₁⁽¹⁾    │       │ h₁⁽²⁾    │       │ ŷ₁ (P=0)│
+  │ x₂      │       │ h₂⁽¹⁾    │       │ h₂⁽²⁾    │       │ ŷ₂ (P=1)│
+  │ x₃      │ ────► │ h₃⁽¹⁾    │ ────► │ h₃⁽²⁾    │ ────► │ ŷ₃ (P=2)│
+  │ ...      │       │ ...      │       │ ...      │       │ ...     │
+  │ x₇₈₄    │       │ h₂₅₆⁽¹⁾  │       │ h₁₂₈⁽²⁾  │       │ ŷ₁₀(P=9)│
+  └─────────┘       └──────────┘       └──────────┘       └─────────┘
+
+  Parameters:
+  W⁽¹⁾: 256×784  = 200,704 weights    W⁽²⁾: 128×256 = 32,768 weights    W⁽³⁾: 10×128 = 1,280 weights
+  b⁽¹⁾: 256×1    = 256 biases         b⁽²⁾: 128×1   = 128 biases        b⁽³⁾: 10×1   = 10 biases
+
+  Total parameters: 200,704 + 256 + 32,768 + 128 + 1,280 + 10 = 235,146
+```
+
+That is 235,146 learnable parameters. Each one gets a gradient computed via backpropagation every training step.
+
+### Forward Pass with Actual Numbers
+
+Suppose you feed in an image of the digit "7". The pixel values (normalized to [0, 1]) form your input vector $\mathbf{x} \in \mathbb{R}^{784}$.
+
+**Layer 1: Input to Hidden 1**
+
+$$\mathbf{z}^{(1)} = \mathbf{W}^{(1)} \mathbf{x} + \mathbf{b}^{(1)}$$
+
+$\mathbf{W}^{(1)}$ is $256 \times 784$. You multiply a 256x784 matrix by a 784x1 vector, giving a 256x1 result. Add the 256x1 bias. Then apply ReLU element-wise:
+
+$$\mathbf{a}^{(1)} = \text{ReLU}(\mathbf{z}^{(1)})$$
+
+Say the first few values of $\mathbf{z}^{(1)}$ are $[0.83, -1.2, 0.45, -0.07, 2.1, ...]$. After ReLU:
+
+$$\mathbf{a}^{(1)} = [0.83, 0, 0.45, 0, 2.1, ...]$$
+
+Negative values get zeroed out. This is the nonlinearity doing its job.
+
+**Layer 2: Hidden 1 to Hidden 2**
+
+$$\mathbf{z}^{(2)} = \mathbf{W}^{(2)} \mathbf{a}^{(1)} + \mathbf{b}^{(2)}$$
+
+$\mathbf{W}^{(2)}$ is $128 \times 256$. Multiply by the 256x1 activation from layer 1, add 128x1 bias, apply ReLU:
+
+$$\mathbf{a}^{(2)} = \text{ReLU}(\mathbf{z}^{(2)})$$
+
+Say $\mathbf{a}^{(2)} = [0.31, 1.7, 0, 0.92, 0.05, ...]$ (128 values).
+
+**Layer 3: Hidden 2 to Output**
+
+$$\mathbf{z}^{(3)} = \mathbf{W}^{(3)} \mathbf{a}^{(2)} + \mathbf{b}^{(3)}$$
+
+$\mathbf{W}^{(3)}$ is $10 \times 128$. The result is a 10x1 vector of logits. Apply softmax to get probabilities:
+
+$$\hat{\mathbf{y}} = \text{softmax}(\mathbf{z}^{(3)})$$
+
+Say the logits are $\mathbf{z}^{(3)} = [-1.2, -0.8, 0.3, -0.5, -1.1, 0.2, -0.9, 3.8, -0.4, 0.1]$.
+
+Softmax converts these to probabilities:
+
+$$\hat{y}_i = \frac{e^{z_i}}{\sum_{j=0}^{9} e^{z_j}}$$
+
+Result: $\hat{\mathbf{y}} \approx [0.005, 0.007, 0.021, 0.009, 0.005, 0.019, 0.006, \mathbf{0.706}, 0.010, 0.017]$
+
+The network assigns 70.6% probability to digit 7. That is the correct class. The forward pass is done.
+
+### Loss Computation
+
+The true label for digit "7" as a one-hot vector: $\mathbf{y} = [0, 0, 0, 0, 0, 0, 0, 1, 0, 0]$.
+
+Categorical cross-entropy loss:
+
+$$\mathcal{L} = -\sum_{k=0}^{9} y_k \log \hat{y}_k = -\log(\hat{y}_7) = -\log(0.706) \approx 0.348$$
+
+Only the true class contributes to the loss (all other $y_k = 0$). A perfect prediction ($\hat{y}_7 = 1$) gives loss 0. Being wrong gives increasingly large loss.
+
+### Backward Pass with Actual Numbers
+
+Now walk backward to compute gradients for all 235,146 parameters.
+
+**Step 1: Output layer error**
+
+$$\boldsymbol{\delta}^{(3)} = \hat{\mathbf{y}} - \mathbf{y} = [0.005, 0.007, 0.021, 0.009, 0.005, 0.019, 0.006, -0.294, 0.010, 0.017]$$
+
+The 7th position is negative (-0.294) because the network should have put MORE probability there. All other positions are positive because those probabilities should decrease.
+
+**Step 2: Gradients for $\mathbf{W}^{(3)}$ and $\mathbf{b}^{(3)}$**
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{(3)}} = \boldsymbol{\delta}^{(3)} (\mathbf{a}^{(2)})^T$$
+
+This is a $10 \times 1$ vector times a $1 \times 128$ vector, giving a $10 \times 128$ gradient matrix. Each entry tells you: "nudge this weight up or down to reduce the loss."
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{b}^{(3)}} = \boldsymbol{\delta}^{(3)}$$
+
+**Step 3: Propagate error to Hidden 2**
+
+$$\boldsymbol{\delta}^{(2)} = (\mathbf{W}^{(3)})^T \boldsymbol{\delta}^{(3)} \odot \text{ReLU}'(\mathbf{z}^{(2)})$$
+
+$(\mathbf{W}^{(3)})^T$ is $128 \times 10$. It projects the 10-dimensional error back into the 128-dimensional hidden space. Then element-wise multiply by the ReLU derivative: wherever $z^{(2)}_i \leq 0$, the gradient is zeroed out (that neuron was "off" during the forward pass, so it does not contribute to the error).
+
+**Step 4: Gradients for $\mathbf{W}^{(2)}$ and $\mathbf{b}^{(2)}$**
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{(2)}} = \boldsymbol{\delta}^{(2)} (\mathbf{a}^{(1)})^T \quad (128 \times 256 \text{ matrix})$$
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{b}^{(2)}} = \boldsymbol{\delta}^{(2)} \quad (128 \times 1 \text{ vector})$$
+
+**Step 5: Propagate error to Hidden 1**
+
+$$\boldsymbol{\delta}^{(1)} = (\mathbf{W}^{(2)})^T \boldsymbol{\delta}^{(2)} \odot \text{ReLU}'(\mathbf{z}^{(1)})$$
+
+**Step 6: Gradients for $\mathbf{W}^{(1)}$ and $\mathbf{b}^{(1)}$**
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{(1)}} = \boldsymbol{\delta}^{(1)} (\mathbf{x})^T \quad (256 \times 784 \text{ matrix})$$
+
+$$\frac{\partial \mathcal{L}}{\partial \mathbf{b}^{(1)}} = \boldsymbol{\delta}^{(1)} \quad (256 \times 1 \text{ vector})$$
+
+That is every gradient for all 235,146 parameters -- computed in one backward pass.
+
+### Parameter Update
+
+With learning rate $\alpha = 0.01$:
+
+$$\mathbf{W}^{(l)} \leftarrow \mathbf{W}^{(l)} - \alpha \frac{\partial \mathcal{L}}{\partial \mathbf{W}^{(l)}}$$
+
+$$\mathbf{b}^{(l)} \leftarrow \mathbf{b}^{(l)} - \alpha \frac{\partial \mathcal{L}}{\partial \mathbf{b}^{(l)}}$$
+
+Repeat for thousands of batches, and the network learns to classify digits with >98% accuracy.
+
+---
+
+## Part 10: Universal Approximation Theorem
+
+A feedforward network with a single hidden layer containing a finite number of neurons can approximate any continuous function on compact subsets of $\mathbb{R}^n$, under mild assumptions on the activation function (Cybenko, 1989; Hornik, 1991).
+
+**What this means**: Neural networks are **universal function approximators**. The question is not "can a network represent this function?" but "can we find the right weights?" The universal approximation theorem guarantees existence but says nothing about how easy it is to find the solution. In practice, deeper networks (more layers, fewer neurons per layer) tend to learn more efficiently than wide shallow ones, even though a single hidden layer is theoretically sufficient.
+
+Think of it like Turing completeness. Every Turing-complete language can compute the same functions, but that does not mean writing a compiler is equally easy in every language. Similarly, any architecture can in principle represent your target function, but depth and structure affect how efficiently gradient descent can find the right parameters.
+
+---
+
+## Part 11: Vanishing and Exploding Gradients
+
+In deep networks, gradients can become very small (vanish) or very large (explode) as they propagate backward through many layers.
+
+**Why gradients vanish**: Look at the recursive formula for $\boldsymbol{\delta}^{(l)}$:
+
+$$\boldsymbol{\delta}^{(l)} = (\mathbf{W}^{(l+1)})^T \boldsymbol{\delta}^{(l+1)} \odot \sigma'_l(\mathbf{z}^{(l)})$$
+
+With sigmoid or tanh, the derivative $\sigma'$ is always less than 1 (sigmoid's max derivative is 0.25). If you multiply by values less than 1 at every layer, the gradient shrinks exponentially. After 10 layers, $0.25^{10} \approx 0.000001$. The early layers barely learn.
+
+**Why gradients explode**: If weight magnitudes are greater than 1, the product $(\mathbf{W}^{(l+1)})^T \boldsymbol{\delta}^{(l+1)}$ can grow exponentially instead.
+
+**Solutions you will see in practice**:
+
+| Solution | How It Helps |
+|----------|-------------|
+| ReLU activation | Derivative is 0 or 1 -- no shrinkage for active neurons |
+| He initialization | Sets initial weights to $\mathcal{N}(0, \sqrt{2/n_{in}})$ -- prevents early explosion |
+| Batch normalization | Normalizes layer inputs -- keeps activations in a well-behaved range |
+| Residual connections | Adds skip paths: $\mathbf{a}^{(l)} = f(\mathbf{a}^{(l-1)}) + \mathbf{a}^{(l-1)}$ -- gradients flow directly |
+| Gradient clipping | Caps gradient magnitude -- prevents explosion |
+
+---
+
+## Part 12: Practical Considerations
+
+### When to Use Neural Networks
+
+- You have **large amounts of data** (deep learning is data-hungry)
+- The function is **complex and nonlinear**
+- Features need to be **learned**, not hand-engineered (images, text, audio)
+- You have **GPU/TPU resources** available
+
+### When to Use Something Simpler
+
+- You have **limited data** (use linear models, decision trees)
+- **Interpretability** is required (use logistic regression, SHAP on tree models)
+- **Training time** is constrained and a simpler model achieves similar performance
+- Your data is tabular with well-engineered features (gradient-boosted trees often win)
+
+### Common Pitfalls
+
+1. **Overfitting**: The network memorizes training data instead of generalizing.
+   - *Solutions*: Dropout, L2 regularization, data augmentation, early stopping.
+
+2. **Learning rate too high or too low**: Too high causes divergence (loss oscillates or increases). Too low means you wait forever.
+   - *Solutions*: Learning rate schedules, adaptive optimizers (Adam, AdamW).
+
+3. **Poor initialization**: Can cause vanishing or exploding gradients from the first step.
+   - *Solutions*: Xavier initialization (for sigmoid/tanh), He initialization (for ReLU).
+
+4. **Not normalizing inputs**: Features on different scales create elongated loss surfaces that gradient descent navigates poorly.
+   - *Solutions*: Standardize inputs to zero mean and unit variance.
+
+---
 
 ## Code Example
 
@@ -207,7 +515,8 @@ A feedforward network with a single hidden layer containing a finite number of n
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Activation functions and their derivatives
+# ─── Activation functions and their derivatives ───
+
 def sigmoid(z):
     z = np.clip(z, -500, 500)
     return 1 / (1 + np.exp(-z))
@@ -231,40 +540,41 @@ def tanh_derivative(z):
 
 class NeuralNetworkFromScratch:
     """
-    A simple feedforward neural network implemented from scratch.
-    Supports arbitrary number of layers with configurable activations.
+    A feedforward neural network implemented from scratch.
+    Mirrors the math in this chapter exactly:
+      forward:  z⁽ˡ⁾ = W⁽ˡ⁾ @ a⁽ˡ⁻¹⁾ + b⁽ˡ⁾,  a⁽ˡ⁾ = σ(z⁽ˡ⁾)
+      backward: δ⁽ˡ⁾ = (W⁽ˡ⁺¹⁾)ᵀ δ⁽ˡ⁺¹⁾ ⊙ σ'(z⁽ˡ⁾)
     """
 
     def __init__(self, layer_sizes, activations=None, learning_rate=0.01):
         """
-        Parameters:
-        -----------
+        Parameters
+        ----------
         layer_sizes : list of int
             Number of neurons in each layer, including input and output.
-            Example: [2, 4, 3, 1] means 2 inputs, two hidden layers (4, 3), 1 output
+            Example: [784, 256, 128, 10] for the MNIST classifier.
         activations : list of str
-            Activation function for each layer (except input).
+            Activation function per layer (excluding input).
             Options: 'sigmoid', 'relu', 'tanh'
         """
         self.layer_sizes = layer_sizes
         self.n_layers = len(layer_sizes)
         self.lr = learning_rate
 
-        # Default activations
+        # Default: ReLU for hidden layers, sigmoid for output
         if activations is None:
             activations = ['relu'] * (self.n_layers - 2) + ['sigmoid']
         self.activations = activations
 
-        # Initialize weights using Xavier/He initialization
+        # Initialize weights: He for ReLU, Xavier for sigmoid/tanh
         self.weights = []
         self.biases = []
 
         for i in range(1, self.n_layers):
-            # Xavier initialization for sigmoid/tanh, He for ReLU
             if self.activations[i-1] == 'relu':
-                scale = np.sqrt(2.0 / layer_sizes[i-1])
+                scale = np.sqrt(2.0 / layer_sizes[i-1])   # He init
             else:
-                scale = np.sqrt(1.0 / layer_sizes[i-1])
+                scale = np.sqrt(1.0 / layer_sizes[i-1])   # Xavier init
 
             W = np.random.randn(layer_sizes[i], layer_sizes[i-1]) * scale
             b = np.zeros((layer_sizes[i], 1))
@@ -274,35 +584,34 @@ class NeuralNetworkFromScratch:
         self.loss_history = []
 
     def _get_activation(self, name):
-        """Return activation function and its derivative."""
+        """Return (activation_fn, derivative_fn) pair."""
         activations = {
             'sigmoid': (sigmoid, sigmoid_derivative),
-            'relu': (relu, relu_derivative),
-            'tanh': (tanh, tanh_derivative)
+            'relu':    (relu, relu_derivative),
+            'tanh':    (tanh, tanh_derivative)
         }
         return activations[name]
 
     def forward(self, X):
         """
-        Forward pass through the network.
+        Forward pass: z⁽ˡ⁾ = W⁽ˡ⁾a⁽ˡ⁻¹⁾ + b⁽ˡ⁾,  a⁽ˡ⁾ = σ(z⁽ˡ⁾)
 
-        Parameters:
-        -----------
-        X : numpy array of shape (n_features, n_samples)
+        Parameters
+        ----------
+        X : ndarray, shape (n_features, n_samples)
 
-        Returns:
-        --------
-        activations : list of activation at each layer
-        pre_activations : list of z values at each layer
+        Returns
+        -------
+        A : ndarray — final layer activation (the prediction)
         """
-        self.a_cache = [X]  # Store activations for backprop
-        self.z_cache = []   # Store pre-activations for backprop
+        self.a_cache = [X]  # a⁽⁰⁾ = x
+        self.z_cache = []
 
         A = X
         for i in range(self.n_layers - 1):
-            Z = self.weights[i] @ A + self.biases[i]
+            Z = self.weights[i] @ A + self.biases[i]   # z⁽ˡ⁾
             activation_fn, _ = self._get_activation(self.activations[i])
-            A = activation_fn(Z)
+            A = activation_fn(Z)                         # a⁽ˡ⁾
 
             self.z_cache.append(Z)
             self.a_cache.append(A)
@@ -321,66 +630,58 @@ class NeuralNetworkFromScratch:
 
     def backward(self, Y):
         """
-        Backward pass using backpropagation.
-
-        Parameters:
-        -----------
-        Y : numpy array of shape (n_outputs, n_samples)
-            True labels
+        Backward pass (backpropagation):
+          δ⁽ᴸ⁾ = a⁽ᴸ⁾ - y
+          δ⁽ˡ⁾ = (W⁽ˡ⁺¹⁾)ᵀ δ⁽ˡ⁺¹⁾ ⊙ σ'(z⁽ˡ⁾)
+          dW⁽ˡ⁾ = (1/m) δ⁽ˡ⁾ (a⁽ˡ⁻¹⁾)ᵀ
+          db⁽ˡ⁾ = (1/m) Σ δ⁽ˡ⁾
         """
         m = Y.shape[1]
         self.dW = []
         self.db = []
 
-        # Output layer error (for binary cross-entropy with sigmoid)
+        # Output layer error: δ⁽ᴸ⁾ = a⁽ᴸ⁾ - y
         delta = self.a_cache[-1] - Y
 
-        # Backpropagate through layers
+        # Walk backward through layers
         for i in range(self.n_layers - 2, -1, -1):
-            # Gradients for weights and biases
+            # Parameter gradients
             dW = (1/m) * delta @ self.a_cache[i].T
             db = (1/m) * np.sum(delta, axis=1, keepdims=True)
 
             self.dW.insert(0, dW)
             self.db.insert(0, db)
 
-            # Propagate error to previous layer (if not input layer)
+            # Propagate error to previous layer
             if i > 0:
                 _, activation_deriv = self._get_activation(self.activations[i-1])
                 delta = (self.weights[i].T @ delta) * activation_deriv(self.z_cache[i-1])
 
     def update_parameters(self):
-        """Update weights and biases using gradients."""
+        """Gradient descent: param -= lr * gradient."""
         for i in range(len(self.weights)):
             self.weights[i] -= self.lr * self.dW[i]
-            self.biases[i] -= self.lr * self.db[i]
+            self.biases[i]  -= self.lr * self.db[i]
 
     def fit(self, X, Y, epochs=1000, verbose=True):
         """
-        Train the neural network.
+        Train the network: forward -> loss -> backward -> update, repeated.
 
-        Parameters:
-        -----------
-        X : numpy array of shape (n_samples, n_features)
-        Y : numpy array of shape (n_samples,) or (n_samples, n_outputs)
+        Parameters
+        ----------
+        X : ndarray, shape (n_samples, n_features)
+        Y : ndarray, shape (n_samples,) or (n_samples, n_outputs)
         """
-        # Transpose to (features, samples) format
+        # Transpose to (features, samples) — standard neural-net convention
         X = X.T
         Y = Y.reshape(1, -1) if Y.ndim == 1 else Y.T
 
         for epoch in range(epochs):
-            # Forward pass
-            Y_pred = self.forward(X)
-
-            # Compute loss
-            loss = self.compute_loss(Y_pred, Y)
+            Y_pred = self.forward(X)                # forward pass
+            loss = self.compute_loss(Y_pred, Y)     # compute loss
             self.loss_history.append(loss)
-
-            # Backward pass
-            self.backward(Y)
-
-            # Update parameters
-            self.update_parameters()
+            self.backward(Y)                        # backward pass
+            self.update_parameters()                # gradient descent step
 
             if verbose and epoch % (epochs // 10) == 0:
                 print(f"Epoch {epoch}, Loss: {loss:.6f}")
@@ -388,32 +689,32 @@ class NeuralNetworkFromScratch:
         return self
 
     def predict(self, X):
-        """Make predictions."""
+        """Binary prediction (threshold at 0.5)."""
         X = X.T
         Y_pred = self.forward(X)
         return (Y_pred > 0.5).astype(int).flatten()
 
     def predict_proba(self, X):
-        """Return probabilities."""
+        """Return raw probabilities."""
         X = X.T
         return self.forward(X).flatten()
 
     def score(self, X, Y):
-        """Calculate accuracy."""
+        """Classification accuracy."""
         return np.mean(self.predict(X) == Y)
 
 
-# Demonstration: Learning XOR (not linearly separable!)
+# ─── Demonstration: Learning XOR (not linearly separable!) ───
+
 if __name__ == "__main__":
     print("=" * 50)
     print("Neural Network Learning XOR")
     print("=" * 50)
 
-    # XOR dataset (not linearly separable)
+    # XOR is not linearly separable — a single-layer network cannot solve it
     X_xor = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
     Y_xor = np.array([0, 1, 1, 0])
 
-    # Train neural network
     nn_xor = NeuralNetworkFromScratch(
         layer_sizes=[2, 4, 1],
         activations=['tanh', 'sigmoid'],
@@ -435,12 +736,10 @@ if __name__ == "__main__":
     np.random.seed(42)
     n_samples = 300
 
-    # Moon 1 (class 0)
     theta1 = np.linspace(0, np.pi, n_samples // 2)
     X1 = np.column_stack([np.cos(theta1), np.sin(theta1)])
     X1 += np.random.randn(n_samples // 2, 2) * 0.1
 
-    # Moon 2 (class 1)
     theta2 = np.linspace(0, np.pi, n_samples // 2)
     X2 = np.column_stack([1 - np.cos(theta2), 1 - np.sin(theta2) - 0.5])
     X2 += np.random.randn(n_samples // 2, 2) * 0.1
@@ -448,15 +747,12 @@ if __name__ == "__main__":
     X = np.vstack([X1, X2])
     Y = np.array([0] * (n_samples // 2) + [1] * (n_samples // 2))
 
-    # Shuffle
     idx = np.random.permutation(n_samples)
     X, Y = X[idx], Y[idx]
 
-    # Split
     X_train, X_test = X[:240], X[240:]
     Y_train, Y_test = Y[:240], Y[240:]
 
-    # Train
     nn = NeuralNetworkFromScratch(
         layer_sizes=[2, 16, 8, 1],
         activations=['relu', 'relu', 'sigmoid'],
@@ -470,17 +766,15 @@ if __name__ == "__main__":
     # Visualization
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 
-    # Plot 1: XOR decision boundary
     ax = axes[0]
     xx, yy = np.meshgrid(np.linspace(-0.5, 1.5, 100), np.linspace(-0.5, 1.5, 100))
     Z = nn_xor.predict_proba(np.c_[xx.ravel(), yy.ravel()]).reshape(xx.shape)
     ax.contourf(xx, yy, Z, levels=50, cmap='RdBu', alpha=0.8)
     ax.scatter(X_xor[:, 0], X_xor[:, 1], c=Y_xor, cmap='RdBu', edgecolors='black', s=200)
     ax.set_title('XOR Problem: Neural Network Solution')
-    ax.set_xlabel('x₁')
-    ax.set_ylabel('x₂')
+    ax.set_xlabel('x_1')
+    ax.set_ylabel('x_2')
 
-    # Plot 2: Two moons decision boundary
     ax = axes[1]
     xx, yy = np.meshgrid(np.linspace(X[:, 0].min() - 0.5, X[:, 0].max() + 0.5, 100),
                          np.linspace(X[:, 1].min() - 0.5, X[:, 1].max() + 0.5, 100))
@@ -488,10 +782,9 @@ if __name__ == "__main__":
     ax.contourf(xx, yy, Z, levels=50, cmap='RdBu', alpha=0.8)
     ax.scatter(X[:, 0], X[:, 1], c=Y, cmap='RdBu', edgecolors='black', s=20)
     ax.set_title('Two Moons: Neural Network Solution')
-    ax.set_xlabel('x₁')
-    ax.set_ylabel('x₂')
+    ax.set_xlabel('x_1')
+    ax.set_ylabel('x_2')
 
-    # Plot 3: Loss curves
     ax = axes[2]
     ax.plot(nn.loss_history, label='Two Moons')
     ax.set_xlabel('Epoch')
@@ -523,70 +816,14 @@ Train Accuracy: 0.9917
 Test Accuracy: 0.9833
 ```
 
-## ML Relevance
-
-### Where Neural Networks Appear
-
-| Domain | Architecture | Example |
-|--------|--------------|---------|
-| Computer Vision | CNN | Image classification, object detection |
-| NLP | Transformer | GPT, BERT, language translation |
-| Sequential Data | RNN/LSTM | Time series, speech recognition |
-| Generative Models | VAE, GAN | Image generation |
-| Reinforcement Learning | Deep Q-Network | Game playing |
-
-### The XOR Problem: Why Depth Matters
-
-The XOR function is not linearly separable. A single-layer network (logistic regression) **cannot** solve it. This was a famous criticism of early neural networks (Minsky & Papert, 1969).
-
-A network with one hidden layer can easily solve XOR by:
-1. Learning to detect "first feature ON" vs "second feature ON"
-2. Combining these detections to output 1 when exactly one is ON
-
-### Vanishing/Exploding Gradients
-
-In deep networks, gradients can become very small (vanish) or very large (explode) as they propagate backward.
-
-**Vanishing**: With sigmoid/tanh, derivatives are always < 1, so products of many derivatives shrink exponentially.
-
-**Solutions**:
-- ReLU activation (derivative is 0 or 1)
-- Batch normalization
-- Residual connections (ResNets)
-- Better initialization (Xavier, He)
-
-## When to Use / Ignore
-
-### Use Neural Networks When:
-- You have **lots of data** (deep learning is data-hungry)
-- The function is **complex and nonlinear**
-- Features need to be **learned** (images, text, audio)
-- You have **GPU resources** available
-
-### Avoid When:
-- You have **limited data** (use simpler models)
-- **Interpretability** is crucial (use linear models, trees)
-- **Training time** is constrained
-- A simpler model achieves similar performance
-
-### Common Pitfalls
-
-1. **Overfitting**: Network memorizes training data
-   - *Solution*: Dropout, regularization, more data, early stopping
-
-2. **Wrong Learning Rate**: Too high = divergence, too low = slow
-   - *Solution*: Learning rate schedules, adaptive optimizers (Adam)
-
-3. **Poor Initialization**: Can cause vanishing/exploding gradients
-   - *Solution*: Xavier/He initialization
-
-4. **Not Normalizing Data**: Features on different scales hurt training
-   - *Solution*: Standardize inputs (zero mean, unit variance)
+---
 
 ## Exercises
 
 ### Exercise 1: Manual Backpropagation
+
 **Problem**: For a network with input $x=2$, one hidden neuron with ReLU, one output neuron with sigmoid, weights $w_1=0.5$, $w_2=1.0$, biases $b_1=0$, $b_2=0$, and target $y=1$:
+
 1. Compute the forward pass
 2. Compute the backward pass (all gradients)
 
@@ -597,19 +834,22 @@ In deep networks, gradients can become very small (vanish) or very large (explod
 - $a_1 = \text{ReLU}(1) = 1$
 - $z_2 = w_2 \cdot a_1 + b_2 = 1.0 \cdot 1 + 0 = 1$
 - $a_2 = \sigma(1) = \frac{1}{1+e^{-1}} \approx 0.731$
-- Loss: $L = -(y\log(a_2) + (1-y)\log(1-a_2)) = -\log(0.731) \approx 0.313$
+- Loss: $\mathcal{L} = -(y\log(a_2) + (1-y)\log(1-a_2)) = -\log(0.731) \approx 0.313$
 
 **Backward pass**:
 - $\delta_2 = a_2 - y = 0.731 - 1 = -0.269$
-- $\frac{\partial L}{\partial w_2} = \delta_2 \cdot a_1 = -0.269 \cdot 1 = -0.269$
-- $\frac{\partial L}{\partial b_2} = \delta_2 = -0.269$
+- $\frac{\partial \mathcal{L}}{\partial w_2} = \delta_2 \cdot a_1 = -0.269 \cdot 1 = -0.269$
+- $\frac{\partial \mathcal{L}}{\partial b_2} = \delta_2 = -0.269$
 - $\delta_1 = w_2 \cdot \delta_2 \cdot \text{ReLU}'(z_1) = 1.0 \cdot (-0.269) \cdot 1 = -0.269$
-- $\frac{\partial L}{\partial w_1} = \delta_1 \cdot x = -0.269 \cdot 2 = -0.538$
-- $\frac{\partial L}{\partial b_1} = \delta_1 = -0.269$
+- $\frac{\partial \mathcal{L}}{\partial w_1} = \delta_1 \cdot x = -0.269 \cdot 2 = -0.538$
+- $\frac{\partial \mathcal{L}}{\partial b_1} = \delta_1 = -0.269$
 
-### Exercise 2: Add Momentum
+All gradients are negative, so gradient descent will increase all weights -- moving the prediction closer to 1. That is exactly what you want.
+
+### Exercise 2: Add Momentum to the Optimizer
+
 **Problem**: Modify the update rule to include momentum:
-$$v_t = \beta v_{t-1} + (1-\beta)\nabla L$$
+$$v_t = \beta v_{t-1} + (1-\beta)\nabla \mathcal{L}$$
 $$w_{t+1} = w_t - \alpha v_t$$
 
 **Solution**:
@@ -618,56 +858,71 @@ class NeuralNetworkWithMomentum(NeuralNetworkFromScratch):
     def __init__(self, *args, momentum=0.9, **kwargs):
         super().__init__(*args, **kwargs)
         self.momentum = momentum
+        # Initialize velocity terms to zero (same shape as parameters)
         self.v_weights = [np.zeros_like(W) for W in self.weights]
         self.v_biases = [np.zeros_like(b) for b in self.biases]
 
     def update_parameters(self):
         for i in range(len(self.weights)):
-            # Update velocity
+            # Update velocity: exponential moving average of gradients
             self.v_weights[i] = (self.momentum * self.v_weights[i] +
                                  (1 - self.momentum) * self.dW[i])
             self.v_biases[i] = (self.momentum * self.v_biases[i] +
                                 (1 - self.momentum) * self.db[i])
-            # Update parameters
+            # Update parameters using velocity instead of raw gradient
             self.weights[i] -= self.lr * self.v_weights[i]
             self.biases[i] -= self.lr * self.v_biases[i]
 ```
 
-### Exercise 3: Prove Chain Rule Application
-**Problem**: Show that for $L = L(a^{(2)})$, $a^{(2)} = \sigma(z^{(2)})$, $z^{(2)} = W^{(2)}a^{(1)} + b^{(2)}$:
+Momentum smooths out gradient noise and helps escape shallow local minima. Think of it like a ball rolling downhill -- it accumulates velocity and can roll past small bumps.
 
-$$\frac{\partial L}{\partial W^{(2)}} = \frac{\partial L}{\partial a^{(2)}} \sigma'(z^{(2)}) (a^{(1)})^T$$
+### Exercise 3: Prove the Chain Rule Application
+
+**Problem**: Show that for $\mathcal{L} = \mathcal{L}(a^{(2)})$, $a^{(2)} = \sigma(z^{(2)})$, $z^{(2)} = W^{(2)}a^{(1)} + b^{(2)}$:
+
+$$\frac{\partial \mathcal{L}}{\partial W^{(2)}} = \frac{\partial \mathcal{L}}{\partial a^{(2)}} \sigma'(z^{(2)}) (a^{(1)})^T$$
 
 **Solution**:
 
 By the chain rule:
-$$\frac{\partial L}{\partial W^{(2)}} = \frac{\partial L}{\partial a^{(2)}} \cdot \frac{\partial a^{(2)}}{\partial z^{(2)}} \cdot \frac{\partial z^{(2)}}{\partial W^{(2)}}$$
+$$\frac{\partial \mathcal{L}}{\partial W^{(2)}} = \frac{\partial \mathcal{L}}{\partial a^{(2)}} \cdot \frac{\partial a^{(2)}}{\partial z^{(2)}} \cdot \frac{\partial z^{(2)}}{\partial W^{(2)}}$$
 
-Breaking down each term:
-1. $\frac{\partial L}{\partial a^{(2)}}$ depends on the loss function
-2. $\frac{\partial a^{(2)}}{\partial z^{(2)}} = \sigma'(z^{(2)})$ (element-wise)
-3. $\frac{\partial z^{(2)}}{\partial W^{(2)}} = a^{(1)}$ (by the derivative of matrix-vector product)
+Breaking down each factor:
+1. $\frac{\partial \mathcal{L}}{\partial a^{(2)}}$ depends on the loss function (given)
+2. $\frac{\partial a^{(2)}}{\partial z^{(2)}} = \sigma'(z^{(2)})$ because $a^{(2)} = \sigma(z^{(2)})$ (element-wise)
+3. $\frac{\partial z^{(2)}}{\partial W^{(2)}} = a^{(1)}$ because $z^{(2)} = W^{(2)}a^{(1)} + b^{(2)}$ (derivative of a matrix-vector product w.r.t. the matrix)
 
 The Jacobian structure gives us the outer product form:
-$$\frac{\partial L}{\partial W^{(2)}} = \delta^{(2)} (a^{(1)})^T$$
+$$\frac{\partial \mathcal{L}}{\partial W^{(2)}} = \delta^{(2)} (a^{(1)})^T$$
 
-where $\delta^{(2)} = \frac{\partial L}{\partial a^{(2)}} \odot \sigma'(z^{(2)})$.
+where $\delta^{(2)} = \frac{\partial \mathcal{L}}{\partial a^{(2)}} \odot \sigma'(z^{(2)})$.
+
+This is exactly the formula from the backpropagation derivation. The chain rule factors cleanly into local derivatives at each step of the computational graph.
+
+---
 
 ## Summary
 
-- **Neural networks** are compositions of simple functions: linear transformations followed by nonlinear activations
+- **A neural network** is function composition: affine transformations followed by nonlinear activations, stacked layer by layer.
 
-- The **forward pass** computes activations layer by layer:
+- **The forward pass** computes activations sequentially:
   $$\mathbf{a}^{(l)} = \sigma(\mathbf{W}^{(l)}\mathbf{a}^{(l-1)} + \mathbf{b}^{(l)})$$
 
-- **Backpropagation** computes gradients using the chain rule:
+- **Backpropagation** computes all gradients in one backward pass using the chain rule:
   $$\boldsymbol{\delta}^{(l)} = (\mathbf{W}^{(l+1)})^T \boldsymbol{\delta}^{(l+1)} \odot \sigma'(\mathbf{z}^{(l)})$$
+  $$\frac{\partial \mathcal{L}}{\partial \mathbf{W}^{(l)}} = \boldsymbol{\delta}^{(l)} (\mathbf{a}^{(l-1)})^T$$
 
-- The **universal approximation theorem** guarantees networks can approximate any continuous function
+- **The universal approximation theorem** guarantees any continuous function can be represented -- the challenge is finding the weights.
 
-- Common challenges include **vanishing gradients**, **overfitting**, and **choosing hyperparameters**
+- **Activation functions are essential** -- without them, any depth of network collapses to a single linear transformation.
 
-- ReLU activations, proper initialization, and regularization techniques address many practical issues
+- **Vanishing/exploding gradients** are the central challenge of deep networks, solved in practice by ReLU, proper initialization, batch norm, and residual connections.
+
+---
+
+## What's Next
+
+Neural networks can represent any function. But high-dimensional data has redundancy. Dimensionality reduction (PCA, SVD) finds the essential structure hiding in your data.
 
 ---
 

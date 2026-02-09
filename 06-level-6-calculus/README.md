@@ -1,118 +1,116 @@
-# Level 6: Calculus - The Optimization Engine
+# Level 6: Calculus - The Math Behind Backpropagation
 
-## Overview
+| [← Level 5: Analytic Geometry](/Users/toannguyen/Repo-Jeditech/book-mathematic/05-level-5-analytic-geometry/README.md) | [Level 7: Probability →](/Users/toannguyen/Repo-Jeditech/book-mathematic/07-level-7-probability/README.md) |
+|---|---|
 
-Welcome to Level 6, where we explore **Calculus**—the mathematical framework that powers modern machine learning's ability to learn from data. If linear algebra provides the language of data transformation and probability gives us uncertainty quantification, calculus is the **optimization engine** that drives learning algorithms to find optimal solutions.
+## Why You're Here
 
-## Why Calculus for Machine Learning?
+Every time you call `loss.backward()` in PyTorch, you're running calculus. Specifically, you're computing the gradient of your loss function with respect to every parameter in your network. That's the chain rule applied millions of times. Without calculus, there's no backprop. Without backprop, there's no practical way to train deep networks.
 
-At its core, machine learning is an optimization problem: given data, find the model parameters that minimize prediction error. This optimization relies entirely on calculus:
+You've probably used gradient descent a hundred times. Maybe you've debugged vanishing gradients, tuned learning rates, or wondered why your loss surface has saddle points. This level explains the math behind all of that.
 
-- **Derivatives** tell us how to adjust parameters to reduce error
-- **Gradients** point us toward the steepest improvement direction
-- **The chain rule** enables backpropagation through deep networks
-- **Integrals** help us compute expectations and probabilities
+## What You'll Learn
 
-Without calculus, there would be no gradient descent, no backpropagation, and no practical way to train neural networks.
+### [Chapter 1: Limits](01-limits.md)
+The foundation of calculus. Limits formalize what it means to "approach" a value without reaching it. You'll learn about epsilon-delta definitions, continuity, and why numerical stability depends on understanding limits. Think of limits like asymptotic analysis in algorithms—they describe behavior as you approach a boundary.
 
-## The Core Insight
+**Bridge for SWEs**: Limits are why `1e-8` shows up everywhere in ML code. They're the reason you add epsilon to denominators and why floating-point arithmetic breaks near zero.
 
-Imagine you're blindfolded on a hilly landscape and need to find the lowest point. Calculus gives you the ability to feel the slope beneath your feet (derivatives) and know which direction leads downhill fastest (gradients). This is exactly what optimization algorithms do when training ML models.
+### [Chapter 2: Derivatives](02-derivatives.md)
+Rate of change. If you've ever run `git diff` to see what changed between commits, you understand derivatives—they measure change between states. You'll learn derivative rules, the chain rule, and how automatic differentiation works under the hood.
+
+**Bridge for SWEs**: Derivatives = git diff for functions. The chain rule is literally backpropagation. Every `optimizer.step()` uses derivatives to update parameters.
+
+### [Chapter 3: Gradients](03-gradients.md)
+Derivatives in multiple dimensions. When your model has millions of parameters, you need the gradient vector (how the loss changes with respect to each parameter), the Jacobian (derivatives of vector-valued functions), and the Hessian (second derivatives, for understanding curvature).
+
+**Bridge for SWEs**: Gradients tell you which direction is "downhill" in your loss landscape. They're the output of backprop and the input to every optimizer.
+
+### [Chapter 4: Optimization](04-optimization.md)
+Finding minima. You'll learn about local vs. global minima, saddle points, and critical points. This is where calculus meets ML training—understanding why gradient descent gets stuck, why initialization matters, and what second-order methods do differently.
+
+**Bridge for SWEs**: Think binary search on a sorted array, but for continuous functions. Gradient descent uses derivatives to search for the minimum of your loss function.
+
+### [Chapter 5: Integral Calculus](05-integral-calculus.md)
+Accumulation and area under curves. Integrals reverse derivatives. They're essential for probability distributions (integrals must sum to 1), computing expectations, and understanding continuous random variables. You'll also learn numerical integration methods.
+
+**Bridge for SWEs**: Integrals = accumulating values over a range, like summing log entries or computing area under a ROC curve. Monte Carlo integration is just sampling plus averaging.
+
+## How It Connects
+
+**Building On**: You need Level 4 (Linear Algebra) first. Gradients are vectors. Hessians are matrices. Backpropagation is the chain rule with matrix derivatives. Without vectors and matrices, you can't understand modern optimization.
+
+**What Comes Next**:
+- Level 7 (Probability) uses integrals everywhere—PDF normalization, expectations, cumulative distributions
+- Level 9 (Optimization Theory) puts this calculus to work with SGD, Adam, momentum, and learning rate schedules
+- Level 8 (Statistics) uses derivatives for maximum likelihood estimation and Fisher information
+
+## The Calculus-to-ML Translation Table
+
+| Calculus Concept | What It Actually Does in ML |
+|------------------|----------------------------|
+| Derivative | Tells you how much changing one weight affects your loss |
+| Chain rule | Backpropagation—derivative flows backward through composed functions |
+| Gradient vector | The direction of steepest increase in your loss (so you go the opposite way) |
+| Jacobian matrix | Derivative of a vector function (like a layer's activations w.r.t. inputs) |
+| Hessian matrix | Second derivatives—tells you about curvature (used in Newton's method) |
+| Partial derivative | Derivative with respect to one parameter while holding others fixed |
+| Critical point | Where gradient = 0 (could be minimum, maximum, or saddle point) |
+| Integral | Accumulation—area under PDF, expected value, cumulative distribution |
+
+## The Loss Landscape Mental Model
 
 ```
-                    Loss Landscape
-
     Loss ↑
-         |    *
+         |
+         |    *              Local minimum (stuck here with GD)
          |   * *         *
-         |  *   *       * *
+         |  *   *   ?   * *  ← Saddle point (gradient = 0 but not minimum)
          | *     *     *   *
          |*       *   *     *
-         |         * *       *
-         |          *         *  ← Global minimum
-         +------------------------→ Parameters
+         |         * *       *___
+         |          *         *  * ← Global minimum (we hope to find this)
+         +----------------------------------→ Parameter space
 
-    Gradient descent follows the slope downhill
+    Gradient = slope at current position
+    Optimizer = algorithm for walking downhill
 ```
 
-## Chapter Structure
+When you train a neural network:
+1. You start at a random point (initialization)
+2. You compute the gradient (backprop)
+3. You take a step in the negative gradient direction (optimizer update)
+4. Repeat until gradient ≈ 0 or you run out of patience
 
-### Chapter 1: Limits
-The foundation of calculus. Limits formalize the concept of "approaching" a value, which is essential for defining derivatives and understanding continuity.
-
-### Chapter 2: Derivatives
-The heart of optimization. Derivatives measure instantaneous rates of change and enable us to find function minima—the mathematical basis of training ML models.
-
-### Chapter 3: Gradients
-Derivatives generalized to multiple dimensions. Gradients, Jacobians, and Hessians tell us how functions change in multi-dimensional parameter spaces.
-
-### Chapter 4: Optimization
-Putting derivatives to work. Understanding local vs. global minima, critical points, and saddle points is crucial for training deep learning models.
-
-### Chapter 5: Integral Calculus
-The reverse of differentiation. Integrals compute accumulated quantities and are essential for probability distributions and expectations.
+Understanding calculus means understanding why this works, when it fails, and how to fix it.
 
 ## Prerequisites
 
-Before diving into this level, ensure you're comfortable with:
+You must be comfortable with:
+- **Level 4: Linear Algebra** — vectors, matrices, dot products, matrix multiplication
+- **Level 3: Functions** — composition, common function families
+- **Level 2: Algebra** — manipulating expressions, solving equations
 
-- **Level 1**: Basic arithmetic and algebraic manipulation
-- **Level 2**: Functions and their properties
-- **Level 5**: Linear algebra basics (vectors, matrices)
+## Navigation
 
-## Learning Objectives
+| Chapter | Topic | Key ML Connection |
+|---------|-------|-------------------|
+| [01-limits.md](01-limits.md) | Limits and continuity | Numerical stability, epsilon values |
+| [02-derivatives.md](02-derivatives.md) | Derivatives and chain rule | Backpropagation, autograd |
+| [03-gradients.md](03-gradients.md) | Multivariable derivatives | Gradient descent, parameter updates |
+| [04-optimization.md](04-optimization.md) | Critical points and minima | Training convergence, saddle points |
+| [05-integral-calculus.md](05-integral-calculus.md) | Integration and accumulation | Expected values, probability |
 
-By the end of this level, you will be able to:
+## Your Learning Approach
 
-1. **Explain** how limits form the foundation of calculus
-2. **Compute** derivatives of common functions using rules and chain rule
-3. **Calculate** gradients of multivariate functions
-4. **Understand** the geometry of optimization landscapes
-5. **Apply** numerical differentiation in Python
-6. **Connect** calculus concepts to gradient descent and backpropagation
+**Stop thinking abstractly**. Every time you see a derivative formula, mentally substitute `model.parameters()` and `loss_fn`. When you see an integral, think "summing over a continuous range."
 
-## The Big Picture
+**Implement as you learn**. NumPy's `np.gradient()` and `scipy.integrate.quad()` let you verify everything numerically. PyTorch's autograd shows you automatic differentiation in action.
 
-```mermaid
-graph TD
-    A[Limits] --> B[Derivatives]
-    B --> C[Gradients]
-    C --> D[Optimization]
-    B --> E[Integrals]
+**Connect to code you've written**. You've probably already used calculus without thinking about it. Now you'll understand what's actually happening when you call `.backward()`.
 
-    D --> F[Gradient Descent]
-    C --> G[Backpropagation]
-    E --> H[Probability & Expectations]
-
-    F --> I[Training ML Models]
-    G --> I
-    H --> I
-```
-
-## Practical Relevance
-
-| Calculus Concept | ML Application |
-|------------------|----------------|
-| Derivative | Measuring loss sensitivity to parameters |
-| Chain Rule | Backpropagation in neural networks |
-| Gradient | Direction for parameter updates |
-| Hessian | Second-order optimization methods |
-| Integral | Computing expectations, normalizing distributions |
-
-## Mindset for This Level
-
-Calculus might seem abstract at first, but remember: every concept here has a direct, practical application in machine learning. When you learn about derivatives, you're learning how neural networks determine which weights to adjust. When you study gradients, you're understanding how gradient descent navigates loss landscapes.
-
-**Think geometrically**: Visualize functions as landscapes, derivatives as slopes, and optimization as finding valleys.
-
-**Think computationally**: Every formula can be implemented in code and verified numerically.
-
-**Think practically**: Connect each concept to its ML application.
-
-Let's begin our journey into the mathematical engine that powers modern AI.
+Let's dive in.
 
 ---
 
-*"Calculus is the language God used to write the universe." — Richard Feynman*
-
-*In machine learning, calculus is the language we use to teach machines.*
+**Next**: [Chapter 1: Limits](01-limits.md) — The foundation that makes everything else work

@@ -1,555 +1,689 @@
 # Chapter 4: Expectation and Moments
 
-## Intuition
+Your model predicts a distribution over outcomes. But you need a single number -- the expected revenue, the average error, the mean prediction. Expected value distills an entire distribution into one number. It is the most important summary statistic in all of ML.
 
-Imagine you're trying to describe a city's income distribution using just a few numbers. You might say "the average income is $60,000" (mean) and "incomes vary by about $20,000 from the average" (standard deviation). These summary statistics capture essential information without listing every single income.
+---
 
-**Real-world analogy**: Think of moments as increasingly detailed descriptions of a photograph. The mean tells you where the "center of mass" is. The variance tells you how spread out the content is. Higher moments tell you about asymmetry (skewness) and whether there are extreme outliers (kurtosis). Each moment adds more detail.
+## Building On
 
-**Why this matters for ML**: Machine learning is obsessed with expectations:
-- Loss functions are expected values: $L = \mathbb{E}[\ell(y, \hat{y})]$
-- Gradient descent uses expected gradients
-- Regularization penalizes variance in predictions
-- Model evaluation uses expected performance metrics
+Random variables give you distributions. But distributions have infinitely many values. How do you summarize them? With moments: mean, variance, and higher-order statistics. If Chapter 3 gave you the "shape" of uncertainty, this chapter gives you the tools to compress that shape into a handful of actionable numbers.
 
-## Visual Explanation
+---
 
-### Mean and Variance Visualized
+## Running Example: Movie Ratings
 
-```mermaid
-graph LR
-    subgraph "Distribution A: Low Variance"
-        A1[Tightly clustered around mean]
-    end
+Throughout this chapter, we will work with a concrete scenario. You are building a recommendation system. Users rate movies on a 1-to-5 scale. You want to answer questions like:
 
-    subgraph "Distribution B: High Variance"
-        B1[Widely spread around mean]
-    end
+- What is the expected rating for a given movie? (Expected value)
+- How much do ratings vary? (Variance)
+- If a user rates action movies highly, do they also rate comedies highly? (Covariance)
 
-    subgraph "Same Mean, Different Variances"
-        C1["Both centered at μ"]
-        C2["A is 'confident', B is 'uncertain'"]
-    end
-```
+These are the exact computations happening inside collaborative filtering, matrix factorization, and every recommendation engine you have ever used.
 
-### The Four Main Moments
+---
 
-```
-                        Moment Hierarchy
-                              |
-         +--------------------+--------------------+
-         |                    |                    |
-    1st Moment           2nd Moment          3rd+ Moments
-       Mean               Variance        Skewness, Kurtosis
-    (Location)            (Spread)        (Shape details)
-         |                    |
-         v                    v
-    "Where is the        "How spread
-     center?"             out is it?"
-```
+## 1. Expected Value (Mean)
 
-### Visual: Same Mean, Different Variances
+### The Idea
 
-```
-Low Variance (σ = 1):          High Variance (σ = 3):
-        |                              |
-       ***                            ***
-      *****                       ***********
-     *******                   *****************
------|-----|-----           --------|----------|--------
-    μ-σ   μ+σ                      μ-σ       μ+σ
-```
+> **You Already Know This**: Expected value is a weighted average. You have done this a thousand times: `sum(value * weight for value, weight in zip(values, weights))`. If you have ever computed a weighted score -- say, averaging code review scores where senior reviewers count double -- you have computed an expected value.
 
-## Mathematical Foundation
+The **expected value** of a random variable X is the probability-weighted average of all its possible values.
 
-### Definition: Expected Value (Mean)
+**Discrete case** (finite or countable outcomes):
 
-The **expected value** or **mean** of a random variable X:
-
-**Discrete**:
 $$\mathbb{E}[X] = \sum_x x \cdot P(X = x) = \sum_x x \cdot p(x)$$
 
-**Continuous**:
+**Continuous case** (uncountable outcomes):
+
 $$\mathbb{E}[X] = \int_{-\infty}^{\infty} x \cdot f(x) \, dx$$
 
-**Notation**: $\mathbb{E}[X]$, $\mu$, $\mu_X$, or $\langle X \rangle$
+**Notation you will encounter**: $\mathbb{E}[X]$, $\mu$, $\mu_X$, or $\langle X \rangle$.
 
-### Properties of Expectation
+### Running Example: Expected Movie Rating
 
-**Linearity** (the most important property):
+Suppose a movie has the following rating distribution:
+
+| Rating (x) | 1    | 2    | 3    | 4    | 5    |
+|-------------|------|------|------|------|------|
+| P(X = x)    | 0.05 | 0.10 | 0.20 | 0.35 | 0.30 |
+
+```python
+import numpy as np
+
+# Movie rating distribution
+ratings = np.array([1, 2, 3, 4, 5])
+probs   = np.array([0.05, 0.10, 0.20, 0.35, 0.30])
+
+# E[X] = sum(x * P(X=x))  -- this is just a weighted average
+expected_rating = np.sum(ratings * probs)
+print(f"Expected rating E[X] = {expected_rating:.2f}")
+# Expected rating E[X] = 3.75
+```
+
+That 3.75 is the number your recommendation engine shows as the "average rating." It is a single scalar that summarizes the entire distribution.
+
+### ASCII Diagram: Distribution With Mean Marked
+
+```
+  P(X=x)
+  0.35 |            #
+  0.30 |            #  #
+  0.20 |         #  #  #
+  0.10 |      #  #  #  #
+  0.05 |   #  #  #  #  #
+       +---+--+--+--+--+--
+           1  2  3  4  5
+                 |
+                3.75
+              E[X] = mu
+```
+
+The mean is the "center of mass" of the distribution. If you cut out the histogram from cardboard, $\mu$ is the balance point.
+
+---
+
+## 2. Properties of Expectation
+
+### Linearity -- The Most Powerful Property
+
 $$\mathbb{E}[aX + bY] = a\mathbb{E}[X] + b\mathbb{E}[Y]$$
 
-This holds even if X and Y are dependent!
+This holds **even if X and Y are dependent**. Read that again. It does not matter how tangled the relationship between X and Y is. Linearity of expectation always holds. This is why it shows up everywhere in ML proofs.
 
-**Expectation of a function**:
+### Expectation of a Function of X
+
+If you apply a function $g$ to a random variable:
+
 $$\mathbb{E}[g(X)] = \sum_x g(x) \cdot p(x) \quad \text{(discrete)}$$
+
 $$\mathbb{E}[g(X)] = \int g(x) \cdot f(x) \, dx \quad \text{(continuous)}$$
 
-### Definition: Variance
+> **Common Mistake -- Jensen's Inequality**: $\mathbb{E}[f(X)] \neq f(\mathbb{E}[X])$ in general. The expected value of $X^2$ is NOT the square of the expected value of $X$. Concretely: `E[X**2] != E[X]**2`. This is Jensen's inequality, and ignoring it is one of the most common bugs in probabilistic reasoning. The only exception is when $f$ is linear (affine).
 
-The **variance** measures spread around the mean:
+```python
+# Demonstrating Jensen's inequality with our movie ratings
+E_X = np.sum(ratings * probs)           # E[X]
+E_X_squared = np.sum(ratings**2 * probs) # E[X^2]
+
+print(f"E[X]         = {E_X:.4f}")
+print(f"E[X]^2       = {E_X**2:.4f}")
+print(f"E[X^2]       = {E_X_squared:.4f}")
+print(f"E[X^2] != E[X]^2 ? {E_X_squared != E_X**2}")
+# E[X]         = 3.7500
+# E[X]^2       = 14.0625
+# E[X^2]       = 15.2500
+# E[X^2] != E[X]^2 ? True
+```
+
+### Linearity in Action
+
+```python
+np.random.seed(42)
+n = 100_000
+
+# Simulate two user rating streams (possibly dependent)
+X = np.random.normal(loc=3.75, scale=1.0, size=n)  # action movie ratings
+Y = np.random.normal(loc=3.20, scale=1.2, size=n)  # comedy ratings
+
+# E[X + Y] = E[X] + E[Y], always
+print(f"E[X]     = {np.mean(X):.4f}")
+print(f"E[Y]     = {np.mean(Y):.4f}")
+print(f"E[X + Y] = {np.mean(X + Y):.4f}  (should be ~{3.75 + 3.20})")
+
+# E[2X + 3] = 2*E[X] + 3
+a, b = 2, 3
+print(f"\nE[{a}X + {b}] = {np.mean(a*X + b):.4f}  (should be ~{a*3.75 + b})")
+
+# Even works with DEPENDENT variables
+Z = X + 0.5 * Y  # Z depends on both X and Y
+print(f"\nZ = X + 0.5*Y (dependent on both)")
+print(f"E[X + Z] = {np.mean(X + Z):.4f}  (should be ~{3.75 + 3.75 + 0.5*3.20})")
+```
+
+---
+
+## 3. Variance
+
+### The Idea
+
+> **You Already Know This**: Variance measures spread, like the "jitter" in your API response times. If your p50 latency is 200ms but p99 is 2000ms, you have high variance. If p50 is 200ms and p99 is 210ms, you have low variance. Same mean, very different reliability.
+
+Variance measures how spread out the distribution is around its mean:
 
 $$\text{Var}(X) = \mathbb{E}[(X - \mu)^2] = \mathbb{E}[X^2] - (\mathbb{E}[X])^2$$
 
-**Notation**: $\text{Var}(X)$, $\sigma^2$, or $\sigma_X^2$
+**Notation**: $\text{Var}(X)$, $\sigma^2$, or $\sigma_X^2$.
+
+The second form -- $\mathbb{E}[X^2] - (\mathbb{E}[X])^2$ -- is the computational shortcut. It is why Jensen's inequality matters: the gap between $\mathbb{E}[X^2]$ and $(\mathbb{E}[X])^2$ IS the variance.
+
+### Running Example: Variance of Movie Ratings
+
+```python
+# Continuing with our movie rating distribution
+ratings = np.array([1, 2, 3, 4, 5])
+probs   = np.array([0.05, 0.10, 0.20, 0.35, 0.30])
+
+E_X = np.sum(ratings * probs)             # 3.75
+E_X2 = np.sum(ratings**2 * probs)          # 15.25
+
+# Var(X) = E[X^2] - (E[X])^2
+var_X = E_X2 - E_X**2
+print(f"E[X]    = {E_X:.4f}")
+print(f"E[X^2]  = {E_X2:.4f}")
+print(f"Var(X)  = {var_X:.4f}")
+# Var(X) = 15.25 - 14.0625 = 1.1875
+
+# This tells you: ratings are spread about 1.19 "squared-rating-units"
+# around the mean. For interpretability, take the square root.
+```
+
+A variance of 1.1875 for a 1-to-5 scale means ratings are moderately spread. A movie where everyone gives it a 4 would have variance near zero. A polarizing movie (lots of 1s and 5s) would have high variance.
+
+### ASCII Diagram: Same Mean, Different Variance
+
+```
+Low Variance (tight consensus):     High Variance (polarizing movie):
+
+  P(x)                                P(x)
+  0.6 |      #                        0.3 | #              #
+  0.4 |   #  #  #                     0.2 | #  #     #  #  #
+  0.2 |   #  #  #                     0.1 | #  #  #  #  #  #
+      +--+--+--+--+--                     +--+--+--+--+--+--
+         1  2  3  4  5                       1  2  3  4  5
+              |                                   |
+             mu                                  mu
+         sigma^2 small                      sigma^2 large
+```
+
+Both distributions can have the same mean, but very different variances. In ML, this distinction is everything: a confident wrong prediction and an uncertain correct prediction look the same if you only check the mean.
 
 ### Properties of Variance
 
 $$\text{Var}(aX + b) = a^2 \text{Var}(X)$$
 
-For independent X and Y:
+Notice: adding a constant $b$ does not change variance (shifting a distribution left or right does not change its spread). Scaling by $a$ scales variance by $a^2$.
+
+For **independent** X and Y:
+
 $$\text{Var}(X + Y) = \text{Var}(X) + \text{Var}(Y)$$
 
-Variance is always non-negative: $\text{Var}(X) \geq 0$
+For **dependent** X and Y, you need the covariance term:
 
-### Definition: Standard Deviation
+$$\text{Var}(X + Y) = \text{Var}(X) + \text{Var}(Y) + 2\text{Cov}(X, Y)$$
 
-The **standard deviation** is the square root of variance:
+Variance is always non-negative: $\text{Var}(X) \geq 0$, and it equals zero only when X is a constant.
+
+```python
+np.random.seed(42)
+n = 100_000
+
+X = np.random.normal(loc=0, scale=3, size=n)  # Var(X) ~ 9
+Y = np.random.normal(loc=0, scale=2, size=n)  # Var(Y) ~ 4
+
+# Var(aX + b) = a^2 * Var(X)
+a, b = 2, 5
+print(f"Var(X) = {np.var(X):.4f}  (should be ~9)")
+print(f"Var({a}X + {b}) = {np.var(a*X + b):.4f}  (should be ~{a**2 * 9})")
+print("Adding constant b=5 does NOT change variance.\n")
+
+# For independent X, Y: Var(X + Y) = Var(X) + Var(Y)
+print(f"Var(X) + Var(Y) = {np.var(X) + np.var(Y):.4f}  (should be ~13)")
+print(f"Var(X + Y)      = {np.var(X + Y):.4f}\n")
+
+# For dependent variables: need covariance
+Z = X + 0.5 * Y  # Z depends on X
+cov_XZ = np.cov(X, Z, ddof=0)[0, 1]
+print(f"Var(X + Z) direct          = {np.var(X + Z):.4f}")
+print(f"Var(X) + Var(Z) + 2Cov(X,Z) = {np.var(X) + np.var(Z) + 2*cov_XZ:.4f}")
+```
+
+---
+
+## 4. Standard Deviation
 
 $$\sigma = \sqrt{\text{Var}(X)}$$
 
-Standard deviation has the same units as X (variance has squared units).
+> **You Already Know This**: Standard deviation is the "typical distance from the mean." Your p50 plus or minus one standard deviation gives you the range where most values fall. If you have ever looked at a monitoring dashboard and seen "mean +/- std," that is exactly this.
 
-### Definition: Covariance
+Standard deviation has the **same units as X**. Variance has squared units, which makes it hard to interpret. If ratings are on a 1-to-5 scale, variance is in "squared ratings" (meaningless), but standard deviation is in ratings (meaningful).
 
-For two random variables X and Y:
+```python
+ratings = np.array([1, 2, 3, 4, 5])
+probs   = np.array([0.05, 0.10, 0.20, 0.35, 0.30])
+
+E_X = np.sum(ratings * probs)
+var_X = np.sum(ratings**2 * probs) - E_X**2
+std_X = np.sqrt(var_X)
+
+print(f"Mean rating:       {E_X:.2f}")
+print(f"Variance:          {var_X:.4f} (squared rating units -- not intuitive)")
+print(f"Standard deviation: {std_X:.4f} (rating units -- interpretable)")
+print(f"\nTypical rating range: [{E_X - std_X:.2f}, {E_X + std_X:.2f}]")
+# Typical rating range: [2.66, 4.84]
+```
+
+---
+
+## 5. Covariance
+
+### The Idea
+
+Covariance measures how two random variables move together.
 
 $$\text{Cov}(X, Y) = \mathbb{E}[(X - \mu_X)(Y - \mu_Y)] = \mathbb{E}[XY] - \mathbb{E}[X]\mathbb{E}[Y]$$
 
-Properties:
-- $\text{Cov}(X, X) = \text{Var}(X)$
-- $\text{Cov}(X, Y) = \text{Cov}(Y, X)$
+- **Positive covariance**: when X is above its mean, Y tends to be above its mean too.
+- **Negative covariance**: when X is above its mean, Y tends to be below its mean.
+- **Zero covariance**: no linear relationship.
+
+### Running Example: Action vs. Comedy Ratings
+
+In your recommendation system, you want to know: if a user rates action movies highly, do they also rate comedies highly?
+
+```python
+np.random.seed(42)
+n_users = 10_000
+
+# Simulate user ratings
+# Some users love everything (positive correlation between genres)
+# Some users are genre-specific
+base_taste = np.random.normal(3.5, 0.8, n_users)  # general movie enjoyment
+action_ratings = base_taste + np.random.normal(0.3, 0.7, n_users)  # action bonus
+comedy_ratings = base_taste + np.random.normal(-0.1, 0.9, n_users)  # comedy offset
+
+# Covariance: do action and comedy ratings co-move?
+E_action = np.mean(action_ratings)
+E_comedy = np.mean(comedy_ratings)
+E_product = np.mean(action_ratings * comedy_ratings)
+
+cov_manual = E_product - E_action * E_comedy
+cov_numpy  = np.cov(action_ratings, comedy_ratings, ddof=0)[0, 1]
+
+print(f"E[action]  = {E_action:.4f}")
+print(f"E[comedy]  = {E_comedy:.4f}")
+print(f"E[action * comedy] = {E_product:.4f}")
+print(f"Cov(action, comedy) manual = {cov_manual:.4f}")
+print(f"Cov(action, comedy) numpy  = {cov_numpy:.4f}")
+print(f"\nPositive covariance: users who like action tend to also like comedy.")
+print("This is because both share the 'base_taste' component.")
+```
+
+### Key Properties of Covariance
+
+- $\text{Cov}(X, X) = \text{Var}(X)$ -- covariance of a variable with itself is its variance
+- $\text{Cov}(X, Y) = \text{Cov}(Y, X)$ -- symmetric
 - If X and Y are independent: $\text{Cov}(X, Y) = 0$
-- The converse is NOT true: zero covariance doesn't imply independence
+- **The converse is NOT true**: zero covariance does NOT imply independence
 
-### Definition: Correlation
+That last point is critical. Here is the classic counterexample:
 
-**Correlation** is normalized covariance:
+```python
+np.random.seed(42)
+n = 10_000
+
+# U is uniform on [-1, 1]
+U = np.random.uniform(-1, 1, n)
+# V = U^2 -- V is completely determined by U (maximally dependent!)
+V = U**2
+
+print(f"Cov(U, V)  = {np.cov(U, V, ddof=0)[0, 1]:.4f}  (near zero)")
+print(f"Corr(U, V) = {np.corrcoef(U, V)[0, 1]:.4f}  (near zero)")
+print(f"But V is a DETERMINISTIC function of U!")
+print("Zero covariance != independence. It only means no LINEAR relationship.")
+```
+
+---
+
+## 6. Correlation
+
+**Correlation** is covariance normalized to the [-1, 1] range:
 
 $$\rho_{XY} = \frac{\text{Cov}(X, Y)}{\sigma_X \sigma_Y}$$
 
-Properties:
-- $-1 \leq \rho \leq 1$
+This is the number you actually want to look at, because raw covariance depends on the scales of X and Y.
+
 - $\rho = 1$: perfect positive linear relationship
 - $\rho = -1$: perfect negative linear relationship
-- $\rho = 0$: no linear relationship (but may have nonlinear!)
+- $\rho = 0$: no linear relationship (but there may be a nonlinear one!)
 
-### Higher Moments
+```python
+np.random.seed(42)
+n = 10_000
 
-**Raw moments**: $\mathbb{E}[X^n]$
+# Independent
+X = np.random.normal(0, 1, n)
+Y_indep = np.random.normal(0, 1, n)
 
-**Central moments**: $\mathbb{E}[(X - \mu)^n]$
+# Positive linear relationship
+Y_pos = X + np.random.normal(0, 0.5, n)
 
-**Skewness** (3rd standardized moment) - measures asymmetry:
+# Negative linear relationship
+Y_neg = -X + np.random.normal(0, 0.5, n)
+
+print("Independent:             rho =", f"{np.corrcoef(X, Y_indep)[0,1]:.4f}")
+print("Positive relationship:   rho =", f"{np.corrcoef(X, Y_pos)[0,1]:.4f}")
+print("Negative relationship:   rho =", f"{np.corrcoef(X, Y_neg)[0,1]:.4f}")
+```
+
+---
+
+## 7. Higher Moments
+
+> **You Already Know This**: Moments are summary statistics at different "resolutions." Mean tells you the center. Variance tells you the spread. Skewness tells you the asymmetry. Kurtosis tells you the tail heaviness. Each moment gives you a higher-resolution view of the distribution's shape.
+
+### The Moment Hierarchy
+
+```
+Moment          Formula                              What it tells you
+------          -------                              -----------------
+1st (Mean)      E[X]                                 Center / location
+2nd (Variance)  E[(X - mu)^2]                        Spread / volatility
+3rd (Skewness)  E[((X - mu) / sigma)^3]              Asymmetry / lopsidedness
+4th (Kurtosis)  E[((X - mu) / sigma)^4]              Tail heaviness / outlier-proneness
+```
+
+### Raw vs. Central vs. Standardized Moments
+
+- **Raw moments**: $\mathbb{E}[X^n]$ -- moments about zero
+- **Central moments**: $\mathbb{E}[(X - \mu)^n]$ -- moments about the mean
+- **Standardized moments**: $\mathbb{E}\left[\left(\frac{X - \mu}{\sigma}\right)^n\right]$ -- unitless, scale-invariant
+
+### Skewness (3rd Standardized Moment)
+
+Measures asymmetry of the distribution:
+
 $$\gamma_1 = \mathbb{E}\left[\left(\frac{X - \mu}{\sigma}\right)^3\right]$$
 
-- $\gamma_1 > 0$: right-skewed (tail on right)
-- $\gamma_1 < 0$: left-skewed (tail on left)
-- $\gamma_1 = 0$: symmetric
+- $\gamma_1 > 0$: right-skewed (long right tail) -- e.g., income distributions, API latencies
+- $\gamma_1 < 0$: left-skewed (long left tail) -- e.g., exam scores with a hard ceiling
+- $\gamma_1 = 0$: symmetric -- e.g., normal distribution
 
-**Kurtosis** (4th standardized moment) - measures "tailedness":
+### Kurtosis (4th Standardized Moment)
+
+Measures how heavy the tails are:
+
 $$\gamma_2 = \mathbb{E}\left[\left(\frac{X - \mu}{\sigma}\right)^4\right]$$
 
-Normal distribution has kurtosis = 3. "Excess kurtosis" subtracts 3.
+The normal distribution has kurtosis = 3. "Excess kurtosis" subtracts 3, so the normal has excess kurtosis = 0. Heavy-tailed distributions (more outlier-prone) have positive excess kurtosis.
 
-## Code Example
+```python
+from scipy import stats
+
+np.random.seed(42)
+n = 100_000
+
+# Different distributions with distinct moment profiles
+normal_samples    = stats.norm.rvs(size=n)
+right_skewed      = stats.expon.rvs(size=n)        # like API latency
+left_skewed       = -stats.expon.rvs(size=n)        # reflected
+heavy_tailed      = stats.t.rvs(df=3, size=n)       # like financial returns
+
+distributions = [
+    ("Normal (baseline)",       normal_samples),
+    ("Right-skewed (Exp)",      right_skewed),
+    ("Left-skewed (-Exp)",      left_skewed),
+    ("Heavy-tailed (t, df=3)",  heavy_tailed),
+]
+
+print(f"{'Distribution':<28} {'Skewness':>10} {'Excess Kurtosis':>17}")
+print("-" * 57)
+for name, samples in distributions:
+    skew = stats.skew(samples)
+    kurt = stats.kurtosis(samples)  # scipy gives excess kurtosis by default
+    print(f"{name:<28} {skew:>10.4f} {kurt:>17.4f}")
+
+# Interpretation:
+# Normal: skew ~ 0, kurtosis ~ 0  (the reference)
+# Exponential: positive skew, positive kurtosis (right tail, more outliers)
+# t-distribution: skew ~ 0 but HIGH kurtosis (extreme outliers)
+```
+
+---
+
+## 8. ML Applications: Where This All Shows Up
+
+### Loss Functions Are Expected Values
+
+Every standard loss function is an expectation:
+
+- **MSE**: $\mathbb{E}[(y - \hat{y})^2]$
+- **Cross-entropy**: $\mathbb{E}[-\log p(\hat{y})]$
+- **Hinge loss**: $\mathbb{E}[\max(0, 1 - y \cdot \hat{y})]$
+
+When you call `loss.backward()` in PyTorch, you are computing the gradient of an expected value.
+
+### Variance in ML
+
+- **Bias-Variance Tradeoff**: $\mathbb{E}[\text{Error}] = \text{Bias}^2 + \text{Variance} + \text{Noise}$
+- **Batch Normalization**: Uses batch estimates of $\mathbb{E}[X]$ and $\text{Var}(X)$
+- **Feature Scaling**: Standardization divides by $\sigma$
+- **PCA**: Principal components are ordered by variance explained
+- **Dropout**: Injects variance as approximate regularization
+
+### The ADAM Optimizer: Moments in Action
+
+ADAM literally uses the first and second moments of gradients:
+
+- First moment estimate (mean of gradients): $m_t = \beta_1 m_{t-1} + (1 - \beta_1) g_t$
+- Second moment estimate (mean of squared gradients): $v_t = \beta_2 v_{t-1} + (1 - \beta_2) g_t^2$
+
+The update is $\theta_t = \theta_{t-1} - \alpha \cdot \hat{m}_t / (\sqrt{\hat{v}_t} + \epsilon)$. This is adaptive learning rate by normalizing the gradient (first moment) by its volatility (square root of second moment).
+
+### Running Example: Movie Rating Prediction Loss
+
+```python
+np.random.seed(42)
+
+# Your recommendation model predicts ratings for 1000 users
+n_users = 1000
+true_ratings = np.random.choice([1, 2, 3, 4, 5], size=n_users,
+                                 p=[0.05, 0.10, 0.20, 0.35, 0.30])
+true_ratings = true_ratings.astype(float)
+
+# Model A: predicts the mean for everyone (baseline)
+pred_A = np.full(n_users, 3.75)
+
+# Model B: a trained model with some noise
+pred_B = true_ratings + np.random.normal(0, 0.5, n_users)
+
+# MSE = E[(y - y_hat)^2]
+mse_A = np.mean((true_ratings - pred_A)**2)
+mse_B = np.mean((true_ratings - pred_B)**2)
+
+print("Movie Rating Prediction -- MSE as Expected Value")
+print(f"Model A (always predict mean): MSE = {mse_A:.4f}")
+print(f"Model B (trained model):       MSE = {mse_B:.4f}")
+
+# Bias-Variance decomposition intuition
+print(f"\nModel A: high bias (ignores user), zero variance in predictions")
+print(f"Model B: low bias (tracks truth), some variance from noise")
+print(f"\nBias^2 + Variance + Noise = Total Error")
+bias_A = np.mean(pred_A) - np.mean(true_ratings)
+bias_B = np.mean(pred_B) - np.mean(true_ratings)
+print(f"Model A bias: {bias_A:.4f}, prediction variance: {np.var(pred_A):.4f}")
+print(f"Model B bias: {bias_B:.4f}, prediction variance: {np.var(pred_B):.4f}")
+```
+
+---
+
+## 9. Putting It All Together: Full Exploration
+
+Here is a complete data exploration of our movie rating example, computing every moment and relationship we have discussed.
 
 ```python
 import numpy as np
 from scipy import stats
 
-# =============================================================================
-# Example 1: Computing Expectation and Variance
-# =============================================================================
+np.random.seed(42)
 
-def expectation_variance_example():
-    """Compute mean and variance for discrete and continuous distributions."""
-    print("Computing Expectation and Variance")
-    print("=" * 50)
+# ==========================================================================
+# Full movie rating analysis
+# ==========================================================================
 
-    # Discrete: Loaded die
-    # X = outcome, probabilities favor 6
-    outcomes = np.array([1, 2, 3, 4, 5, 6])
-    probabilities = np.array([1, 1, 1, 1, 1, 2]) / 7
+# Rating distributions for two genres
+action_probs = np.array([0.05, 0.10, 0.20, 0.35, 0.30])  # action movies
+comedy_probs = np.array([0.10, 0.15, 0.30, 0.25, 0.20])  # comedies
+ratings = np.array([1, 2, 3, 4, 5])
 
-    # E[X] = sum(x * p(x))
-    mean = np.sum(outcomes * probabilities)
+print("=" * 60)
+print("MOVIE RATING ANALYSIS: Expectation and Moments")
+print("=" * 60)
 
-    # E[X^2] = sum(x^2 * p(x))
-    E_X_squared = np.sum(outcomes**2 * probabilities)
+# --- Expected Values ---
+E_action = np.sum(ratings * action_probs)
+E_comedy = np.sum(ratings * comedy_probs)
+print(f"\n--- Expected Ratings ---")
+print(f"E[action]  = {E_action:.4f}")
+print(f"E[comedy]  = {E_comedy:.4f}")
 
-    # Var(X) = E[X^2] - (E[X])^2
-    variance = E_X_squared - mean**2
-    std = np.sqrt(variance)
+# --- Variances ---
+var_action = np.sum(ratings**2 * action_probs) - E_action**2
+var_comedy = np.sum(ratings**2 * comedy_probs) - E_comedy**2
+std_action = np.sqrt(var_action)
+std_comedy = np.sqrt(var_comedy)
 
-    print("\nDiscrete: Loaded Die (6 is twice as likely)")
-    print(f"E[X] = {mean:.4f}")
-    print(f"E[X^2] = {E_X_squared:.4f}")
-    print(f"Var(X) = {variance:.4f}")
-    print(f"Std(X) = {std:.4f}")
+print(f"\n--- Variance and Std Dev ---")
+print(f"Var(action) = {var_action:.4f},  Std(action) = {std_action:.4f}")
+print(f"Var(comedy) = {var_comedy:.4f},  Std(comedy) = {std_comedy:.4f}")
+print(f"Action range (mu +/- sigma): [{E_action - std_action:.2f}, {E_action + std_action:.2f}]")
+print(f"Comedy range (mu +/- sigma): [{E_comedy - std_comedy:.2f}, {E_comedy + std_comedy:.2f}]")
 
-    # Verify with simulation
-    np.random.seed(42)
-    samples = np.random.choice(outcomes, size=100000, p=probabilities)
-    print(f"\nSimulation verification (n=100,000):")
-    print(f"Sample mean: {np.mean(samples):.4f}")
-    print(f"Sample variance: {np.var(samples):.4f}")
+# --- Simulate paired user ratings for covariance ---
+n_users = 50_000
+base_taste = np.random.normal(0, 0.8, n_users)
+action_samples = np.random.choice(ratings, size=n_users, p=action_probs).astype(float)
+action_samples += base_taste  # shared taste component
+comedy_samples = np.random.choice(ratings, size=n_users, p=comedy_probs).astype(float)
+comedy_samples += base_taste  # same shared taste
 
-    # Continuous: Normal distribution
-    print("\n\nContinuous: Normal(mu=5, sigma=2)")
-    normal = stats.norm(loc=5, scale=2)
-    print(f"E[X] = {normal.mean():.4f}")
-    print(f"Var(X) = {normal.var():.4f}")
-    print(f"Std(X) = {normal.std():.4f}")
+cov_ac = np.cov(action_samples, comedy_samples, ddof=0)[0, 1]
+corr_ac = np.corrcoef(action_samples, comedy_samples)[0, 1]
 
-expectation_variance_example()
+print(f"\n--- Covariance and Correlation (Action vs. Comedy) ---")
+print(f"Cov(action, comedy)  = {cov_ac:.4f}")
+print(f"Corr(action, comedy) = {corr_ac:.4f}")
+print(f"Positive correlation: users with good taste rate both genres higher.")
 
-# =============================================================================
-# Example 2: Linearity of Expectation
-# =============================================================================
+# --- Higher Moments ---
+print(f"\n--- Higher Moments (from simulated samples) ---")
+print(f"{'Genre':<10} {'Skewness':>10} {'Excess Kurtosis':>17}")
+print("-" * 40)
+for name, samples in [("Action", action_samples), ("Comedy", comedy_samples)]:
+    skew = stats.skew(samples)
+    kurt = stats.kurtosis(samples)
+    print(f"{name:<10} {skew:>10.4f} {kurt:>17.4f}")
 
-def linearity_example():
-    """Demonstrate linearity of expectation."""
-    print("\n\n" + "=" * 50)
-    print("Linearity of Expectation")
-    print("=" * 50)
-
-    np.random.seed(42)
-    n = 100000
-
-    # Two random variables (can be dependent or independent)
-    X = np.random.normal(loc=3, scale=1, size=n)
-    Y = np.random.normal(loc=5, scale=2, size=n)
-
-    # E[X + Y] = E[X] + E[Y]
-    print("\nE[X] = 3, E[Y] = 5")
-    print(f"E[X + Y] should be 8")
-    print(f"E[X + Y] (calculated) = {np.mean(X + Y):.4f}")
-
-    # E[aX + b] = a*E[X] + b
-    a, b = 2, 7
-    print(f"\nE[{a}X + {b}] should be {a}*3 + {b} = {a*3 + b}")
-    print(f"E[{a}X + {b}] (calculated) = {np.mean(a*X + b):.4f}")
-
-    # This works even for DEPENDENT variables!
-    Z = X + 0.5 * Y  # Z depends on both X and Y
-    print(f"\nZ = X + 0.5*Y (dependent on both)")
-    print(f"E[X + Z] should be E[X] + E[Z] = 3 + (3 + 0.5*5) = {3 + 3 + 2.5}")
-    print(f"E[X + Z] (calculated) = {np.mean(X + Z):.4f}")
-
-linearity_example()
-
-# =============================================================================
-# Example 3: Variance Properties
-# =============================================================================
-
-def variance_properties():
-    """Demonstrate variance properties."""
-    print("\n\n" + "=" * 50)
-    print("Variance Properties")
-    print("=" * 50)
-
-    np.random.seed(42)
-    n = 100000
-
-    X = np.random.normal(loc=0, scale=3, size=n)  # Var(X) = 9
-    Y = np.random.normal(loc=0, scale=2, size=n)  # Var(Y) = 4
-
-    # Var(aX + b) = a^2 * Var(X)
-    a, b = 2, 5
-    print(f"\nVar(X) = 9, Var(Y) = 4")
-    print(f"\nVar({a}X + {b}) should be {a}^2 * 9 = {a**2 * 9}")
-    print(f"Var({a}X + {b}) (calculated) = {np.var(a*X + b):.4f}")
-    print("Note: Adding constant b doesn't affect variance!")
-
-    # For independent X and Y: Var(X + Y) = Var(X) + Var(Y)
-    print(f"\nFor independent X, Y:")
-    print(f"Var(X + Y) should be 9 + 4 = 13")
-    print(f"Var(X + Y) (calculated) = {np.var(X + Y):.4f}")
-
-    # For dependent variables, we need covariance
-    Z = X + 0.5 * Y  # Z depends on X
-    # Var(X + Z) = Var(X) + Var(Z) + 2*Cov(X,Z)
-    cov_XZ = np.cov(X, Z)[0, 1]
-    var_sum_formula = np.var(X) + np.var(Z) + 2 * cov_XZ
-    print(f"\nFor dependent X, Z:")
-    print(f"Var(X + Z) (direct) = {np.var(X + Z):.4f}")
-    print(f"Var(X) + Var(Z) + 2*Cov(X,Z) = {var_sum_formula:.4f}")
-
-variance_properties()
-
-# =============================================================================
-# Example 4: Covariance and Correlation
-# =============================================================================
-
-def covariance_correlation_example():
-    """Demonstrate covariance and correlation."""
-    print("\n\n" + "=" * 50)
-    print("Covariance and Correlation")
-    print("=" * 50)
-
-    np.random.seed(42)
-    n = 10000
-
-    # Independent variables
-    X = np.random.normal(0, 1, n)
-    Y = np.random.normal(0, 1, n)
-
-    print("\nIndependent X and Y:")
-    print(f"Cov(X, Y) = {np.cov(X, Y)[0,1]:.4f} (should be ~0)")
-    print(f"Corr(X, Y) = {np.corrcoef(X, Y)[0,1]:.4f} (should be ~0)")
-
-    # Positively correlated
-    Z = X + np.random.normal(0, 0.5, n)  # Z depends on X
-
-    print("\nPositively correlated X and Z:")
-    print(f"Cov(X, Z) = {np.cov(X, Z)[0,1]:.4f}")
-    print(f"Corr(X, Z) = {np.corrcoef(X, Z)[0,1]:.4f}")
-
-    # Negatively correlated
-    W = -X + np.random.normal(0, 0.5, n)
-
-    print("\nNegatively correlated X and W:")
-    print(f"Cov(X, W) = {np.cov(X, W)[0,1]:.4f}")
-    print(f"Corr(X, W) = {np.corrcoef(X, W)[0,1]:.4f}")
-
-    # Zero covariance but NOT independent (nonlinear relationship)
-    U = np.random.uniform(-1, 1, n)
-    V = U**2  # V is a function of U, but symmetric
-
-    print("\nZero covariance but DEPENDENT (V = U^2):")
-    print(f"Cov(U, V) = {np.cov(U, V)[0,1]:.4f} (near 0)")
-    print(f"Corr(U, V) = {np.corrcoef(U, V)[0,1]:.4f} (near 0)")
-    print("But V is completely determined by U!")
-
-covariance_correlation_example()
-
-# =============================================================================
-# Example 5: Higher Moments - Skewness and Kurtosis
-# =============================================================================
-
-def higher_moments_example():
-    """Demonstrate skewness and kurtosis."""
-    print("\n\n" + "=" * 50)
-    print("Higher Moments: Skewness and Kurtosis")
-    print("=" * 50)
-
-    np.random.seed(42)
-    n = 100000
-
-    # Normal distribution (symmetric, "standard" tail weight)
-    normal_samples = stats.norm.rvs(size=n)
-
-    # Right-skewed distribution (exponential)
-    right_skewed = stats.expon.rvs(size=n)
-
-    # Left-skewed distribution (reflected exponential)
-    left_skewed = -stats.expon.rvs(size=n)
-
-    # Heavy-tailed distribution (t with low df)
-    heavy_tailed = stats.t.rvs(df=3, size=n)
-
-    distributions = [
-        ("Normal", normal_samples),
-        ("Right-skewed (Exp)", right_skewed),
-        ("Left-skewed (-Exp)", left_skewed),
-        ("Heavy-tailed (t, df=3)", heavy_tailed)
-    ]
-
-    print("\n{:<25} {:>10} {:>15}".format("Distribution", "Skewness", "Excess Kurtosis"))
-    print("-" * 52)
-    for name, samples in distributions:
-        skew = stats.skew(samples)
-        kurt = stats.kurtosis(samples)  # excess kurtosis (subtracts 3)
-        print(f"{name:<25} {skew:>10.4f} {kurt:>15.4f}")
-
-    print("\nInterpretation:")
-    print("- Skewness > 0: right tail is longer")
-    print("- Skewness < 0: left tail is longer")
-    print("- Excess Kurtosis > 0: heavier tails than normal")
-    print("- Excess Kurtosis < 0: lighter tails than normal")
-
-higher_moments_example()
-
-# =============================================================================
-# Example 6: ML Application - Loss as Expected Value
-# =============================================================================
-
-def ml_loss_example():
-    """Show that ML loss is an expected value."""
-    print("\n\n" + "=" * 50)
-    print("ML Application: Loss as Expected Value")
-    print("=" * 50)
-
-    np.random.seed(42)
-
-    # True data generating process
-    n_samples = 1000
-    X = np.random.uniform(0, 10, n_samples)
-    y_true = 2 * X + 1 + np.random.normal(0, 2, n_samples)
-
-    # Two models with different predictions
-    y_pred_good = 2.1 * X + 0.9  # Good model
-    y_pred_bad = 1.5 * X + 3     # Bad model
-
-    # MSE = E[(y - y_hat)^2]
-    mse_good = np.mean((y_true - y_pred_good)**2)
-    mse_bad = np.mean((y_true - y_pred_bad)**2)
-
-    print("\nMean Squared Error = E[(y - y_hat)^2]")
-    print(f"Good model MSE: {mse_good:.4f}")
-    print(f"Bad model MSE: {mse_bad:.4f}")
-
-    # Bias-Variance decomposition
-    # MSE = Bias^2 + Variance + Irreducible Error
-    print("\n\nBias-Variance Decomposition:")
-    print("E[(y - y_hat)^2] = Bias^2 + Variance + sigma^2")
-
-    # For the good model
-    bias_good = np.mean(y_pred_good) - np.mean(y_true)
-    var_pred_good = np.var(y_pred_good)
-
-    print(f"\nGood model:")
-    print(f"Bias = {bias_good:.4f}")
-    print(f"Variance of predictions = {var_pred_good:.4f}")
-
-ml_loss_example()
+# --- Jensen's Inequality Reminder ---
+print(f"\n--- Jensen's Inequality Check ---")
+E_X = np.mean(action_samples)
+E_X2 = np.mean(action_samples**2)
+print(f"E[X]^2  = {E_X**2:.4f}")
+print(f"E[X^2]  = {E_X2:.4f}")
+print(f"Gap     = {E_X2 - E_X**2:.4f}  (this gap IS the variance)")
 ```
 
-## ML Relevance
+---
 
-### Where Expectation Appears in ML
+## 10. Common Mistakes
 
-1. **Loss Functions**: All standard losses are expectations:
-   - MSE: $\mathbb{E}[(y - \hat{y})^2]$
-   - Cross-entropy: $\mathbb{E}[-\log p(\hat{y})]$
-   - Hinge loss: $\mathbb{E}[\max(0, 1 - y \cdot \hat{y})]$
+Here are the mistakes that trip up even experienced engineers.
 
-2. **Stochastic Gradient Descent**: We estimate $\mathbb{E}[\nabla L]$ with mini-batch averages.
+**1. E[f(X)] != f(E[X]) -- Jensen's Inequality**
 
-3. **Regularization**: Weight decay penalizes $\mathbb{E}[\|\theta\|^2]$.
+This is the single most common error. If your loss function is nonlinear (and it almost always is), you cannot just plug the mean into the function. You must compute the expectation over the full distribution.
 
-4. **Batch Normalization**: Uses batch estimates of $\mathbb{E}[X]$ and $\text{Var}(X)$.
+**2. Confusing sample and population statistics**
 
-5. **Reinforcement Learning**: Policy gradient methods optimize expected reward.
+- Population mean: $\mu = \mathbb{E}[X]$ (theoretical, usually unknown)
+- Sample mean: $\bar{x} = \frac{1}{n}\sum x_i$ (what you compute from data)
+- For variance: use $\frac{1}{n-1}$ (Bessel's correction) for an unbiased estimator of population variance. NumPy's `np.var()` uses $\frac{1}{n}$ by default -- pass `ddof=1` for the unbiased version.
 
-### Where Variance Appears in ML
+**3. Var(X + Y) = Var(X) + Var(Y) -- only if independent**
 
-1. **Model Uncertainty**: Bayesian models estimate prediction variance.
+If X and Y are dependent, you must include the covariance term: $\text{Var}(X + Y) = \text{Var}(X) + \text{Var}(Y) + 2\text{Cov}(X, Y)$. Forgetting this is a classic bug in error propagation.
 
-2. **Bias-Variance Tradeoff**: $\mathbb{E}[\text{Error}] = \text{Bias}^2 + \text{Variance} + \text{Noise}$
+**4. Zero covariance implies independence -- FALSE**
 
-3. **Feature Scaling**: Standardization divides by standard deviation.
+Zero covariance means no linear relationship. There can be a perfect nonlinear relationship (like $V = U^2$) and covariance will still be zero.
 
-4. **PCA**: Principal components are ordered by variance explained.
+**5. Ignoring units**
 
-5. **Dropout**: Acts as approximate variational inference by injecting variance.
+Variance has squared units. If X is in meters, $\text{Var}(X)$ is in meters-squared. Use standard deviation for interpretable results.
 
-### Specific Algorithms
-
-- **Linear Regression**: Minimizes expected squared error
-- **Gaussian Processes**: Provide mean and variance predictions
-- **Variational Autoencoders**: Encode mean and variance of latent distribution
-- **ADAM Optimizer**: Uses first and second moment estimates of gradients
-
-## When to Use / Ignore
-
-### When to Focus on Mean
-
-- **Point predictions**: When you need a single best guess
-- **Risk-neutral decisions**: When all errors cost the same per unit
-- **Large sample scenarios**: Mean converges reliably with more data
-
-### When to Focus on Variance
-
-- **Uncertainty quantification**: When you need confidence intervals
-- **Risk-averse decisions**: When large errors are disproportionately bad
-- **Small sample scenarios**: High variance means unreliable estimates
-- **Model selection**: Prefer lower variance models when bias is similar
-
-### Common Pitfalls
-
-1. **Confusing sample and population statistics**:
-   - Population mean: $\mu = \mathbb{E}[X]$
-   - Sample mean: $\bar{x} = \frac{1}{n}\sum x_i$
-
-2. **Using variance for non-independent sums**: Must include covariance terms.
-
-3. **Ignoring units**: Variance has squared units; use std for interpretability.
-
-4. **Assuming zero covariance implies independence**: Only true for jointly normal.
+---
 
 ## Exercises
 
-### Exercise 1: Expected Value Calculation
+### Exercise 1: Expected Value of Movie Ratings
 
-A game costs $5 to play. You roll a die: if 6, you win $20; if 5, you win $10; otherwise you win nothing. What's the expected profit?
-
-**Solution**:
-```python
-# Outcomes and probabilities
-outcomes = [6, 5, 1, 2, 3, 4]
-payouts = [20, 10, 0, 0, 0, 0]
-prob = [1/6] * 6
-cost = 5
-
-# E[profit] = E[payout] - cost
-E_payout = sum(p * payout for p, payout in zip(prob, payouts))
-E_profit = E_payout - cost
-
-print(f"E[payout] = {E_payout:.4f}")  # 5.0
-print(f"E[profit] = {E_profit:.4f}")  # 0.0
-
-# Fair game! Expected profit is zero.
-```
-
-### Exercise 2: Variance from Definition
-
-For X with P(X=-1) = 0.25, P(X=0) = 0.5, P(X=1) = 0.25, calculate Var(X).
+A new movie has the following rating distribution: P(1)=0.15, P(2)=0.20, P(3)=0.30, P(4)=0.25, P(5)=0.10. What is the expected rating? Is this movie above or below the platform average of 3.75?
 
 **Solution**:
 ```python
 import numpy as np
 
-values = np.array([-1, 0, 1])
-probs = np.array([0.25, 0.5, 0.25])
+ratings = np.array([1, 2, 3, 4, 5])
+probs   = np.array([0.15, 0.20, 0.30, 0.25, 0.10])
 
-# E[X]
-mean = np.sum(values * probs)
-print(f"E[X] = {mean}")  # 0
-
-# E[X^2]
-E_X_squared = np.sum(values**2 * probs)
-print(f"E[X^2] = {E_X_squared}")  # 0.5
-
-# Var(X) = E[X^2] - (E[X])^2
-variance = E_X_squared - mean**2
-print(f"Var(X) = {variance}")  # 0.5
+E_X = np.sum(ratings * probs)
+print(f"E[X] = {E_X:.2f}")  # 2.95
+print(f"Below platform average of 3.75 by {3.75 - E_X:.2f} points")
 ```
 
-### Exercise 3: Covariance Computation
+### Exercise 2: Variance From Definition
 
-Given joint distribution: P(X=0,Y=0)=0.2, P(X=0,Y=1)=0.3, P(X=1,Y=0)=0.4, P(X=1,Y=1)=0.1. Find Cov(X,Y).
+For a movie where P(1)=0.25, P(3)=0.50, P(5)=0.25, compute the variance and standard deviation. Is this a polarizing movie?
 
 **Solution**:
 ```python
 import numpy as np
 
-# Joint probabilities
-# P(X=0, Y=0) = 0.2, P(X=0, Y=1) = 0.3
-# P(X=1, Y=0) = 0.4, P(X=1, Y=1) = 0.1
+values = np.array([1, 3, 5])
+probs  = np.array([0.25, 0.50, 0.25])
 
-joint = np.array([[0.2, 0.3],   # X=0
-                  [0.4, 0.1]])  # X=1
+E_X = np.sum(values * probs)          # 3.0
+E_X2 = np.sum(values**2 * probs)       # 0.25*1 + 0.50*9 + 0.25*25 = 11.0
+var_X = E_X2 - E_X**2                  # 11.0 - 9.0 = 2.0
+std_X = np.sqrt(var_X)
 
-# Marginal P(X)
-P_X = joint.sum(axis=1)  # [0.5, 0.5]
-# Marginal P(Y)
-P_Y = joint.sum(axis=0)  # [0.6, 0.4]
+print(f"E[X]    = {E_X:.2f}")          # 3.00
+print(f"E[X^2]  = {E_X2:.2f}")         # 11.00
+print(f"Var(X)  = {var_X:.2f}")         # 2.00
+print(f"Std(X)  = {std_X:.4f}")         # 1.4142
 
-# E[X], E[Y]
+# Variance of 2.0 on a 1-5 scale is fairly high.
+# The movie has no 2s or 4s -- people either hate it or love it.
+# This is a polarizing movie.
+```
+
+### Exercise 3: Covariance Between Genres
+
+Given the following joint distribution of action (X) and comedy (Y) ratings (simplified to Low=0, High=1):
+
+| | Y=0 (low comedy) | Y=1 (high comedy) |
+|---|---|---|
+| X=0 (low action) | 0.20 | 0.30 |
+| X=1 (high action) | 0.40 | 0.10 |
+
+Compute Cov(X, Y). What does the sign tell you?
+
+**Solution**:
+```python
+import numpy as np
+
+# Joint distribution
+joint = np.array([[0.20, 0.30],   # X=0
+                  [0.40, 0.10]])  # X=1
+
 X_vals = np.array([0, 1])
 Y_vals = np.array([0, 1])
+
+# Marginals
+P_X = joint.sum(axis=1)  # [0.50, 0.50]
+P_Y = joint.sum(axis=0)  # [0.60, 0.40]
+
+# Expected values
 E_X = np.sum(X_vals * P_X)  # 0.5
 E_Y = np.sum(Y_vals * P_Y)  # 0.4
 
@@ -558,29 +692,44 @@ E_XY = 0
 for i, x in enumerate(X_vals):
     for j, y in enumerate(Y_vals):
         E_XY += x * y * joint[i, j]
-# Only X=1, Y=1 contributes: 1*1*0.1 = 0.1
+# Only (1,1) contributes: 1*1*0.10 = 0.10
 
-# Cov(X,Y) = E[XY] - E[X]E[Y]
+# Cov(X,Y) = E[XY] - E[X]*E[Y]
 cov = E_XY - E_X * E_Y
-print(f"E[X] = {E_X}, E[Y] = {E_Y}")
-print(f"E[XY] = {E_XY}")
-print(f"Cov(X,Y) = {cov}")  # 0.1 - 0.5*0.4 = -0.1
+print(f"E[X]      = {E_X}")       # 0.5
+print(f"E[Y]      = {E_Y}")       # 0.4
+print(f"E[XY]     = {E_XY}")      # 0.1
+print(f"Cov(X,Y)  = {cov}")       # 0.1 - 0.2 = -0.1
 
-# Negative covariance: when X is high, Y tends to be low
+# Negative covariance: users who rate action highly tend to rate comedy LOW.
+# These are genre-specific users, not "love everything" users.
 ```
-
-## Summary
-
-- **Expected Value (Mean)**: $\mathbb{E}[X] = \sum x \cdot p(x)$ or $\int x \cdot f(x) dx$ - the "center" of a distribution
-- **Linearity of Expectation**: $\mathbb{E}[aX + bY] = a\mathbb{E}[X] + b\mathbb{E}[Y]$ - works always, even for dependent variables
-- **Variance**: $\text{Var}(X) = \mathbb{E}[(X-\mu)^2] = \mathbb{E}[X^2] - (\mathbb{E}[X])^2$ - measures spread
-- **Standard Deviation**: $\sigma = \sqrt{\text{Var}(X)}$ - same units as X
-- **Covariance**: $\text{Cov}(X,Y) = \mathbb{E}[XY] - \mathbb{E}[X]\mathbb{E}[Y]$ - measures linear relationship
-- **Correlation**: $\rho = \frac{\text{Cov}(X,Y)}{\sigma_X \sigma_Y}$ - normalized to [-1, 1]
-- **Skewness**: Measures asymmetry (positive = right tail longer)
-- **Kurtosis**: Measures tail weight (higher = heavier tails)
-- In ML: losses are expectations, regularization controls variance, SGD estimates expected gradients
 
 ---
 
-**Next**: [Chapter 5: Common Distributions](05-common-distributions.md) - Learn the probability distributions you'll encounter throughout ML.
+## Summary
+
+| Concept | Formula | One-liner |
+|---------|---------|-----------|
+| **Expected Value** | $\mathbb{E}[X] = \sum x \cdot p(x)$ or $\int x \cdot f(x) \, dx$ | Center of the distribution |
+| **Linearity** | $\mathbb{E}[aX + bY] = a\mathbb{E}[X] + b\mathbb{E}[Y]$ | Always holds, even for dependent variables |
+| **Variance** | $\text{Var}(X) = \mathbb{E}[X^2] - (\mathbb{E}[X])^2$ | Spread around the mean |
+| **Standard Deviation** | $\sigma = \sqrt{\text{Var}(X)}$ | Same units as X; interpretable spread |
+| **Covariance** | $\text{Cov}(X,Y) = \mathbb{E}[XY] - \mathbb{E}[X]\mathbb{E}[Y]$ | Linear co-movement |
+| **Correlation** | $\rho = \frac{\text{Cov}(X,Y)}{\sigma_X \sigma_Y} \in [-1, 1]$ | Normalized covariance |
+| **Skewness** | $\mathbb{E}\left[\left(\frac{X-\mu}{\sigma}\right)^3\right]$ | Asymmetry (positive = right tail) |
+| **Kurtosis** | $\mathbb{E}\left[\left(\frac{X-\mu}{\sigma}\right)^4\right]$ | Tail heaviness (normal = 3) |
+
+**The key identities to internalize**:
+- Linearity of expectation: always works, never needs independence.
+- Variance of a sum: needs independence OR explicit covariance terms.
+- Jensen's inequality: $\mathbb{E}[f(X)] \neq f(\mathbb{E}[X])$ unless $f$ is linear.
+- Zero covariance does not imply independence.
+
+---
+
+## What's Next
+
+You can compute expectations and variances. But which distributions actually show up in practice? Gaussian, Bernoulli, Poisson -- the common distributions are the building blocks of every ML model. In the next chapter, we catalog each one, show you its moments, and explain where it appears in ML.
+
+**Next**: [Chapter 5: Common Distributions](05-common-distributions.md)
