@@ -124,10 +124,10 @@ IEEE 754 reserves certain bit patterns for edge cases:
 
 | Exponent | Mantissa | Meaning |
 |----------|----------|---------|
-| $e = 0, m = 0$ | All zeros | **Zero** ($\pm 0$) |
-| $e = 0, m \neq 0$ | Non-zero | **Denormalized** (very small numbers near zero) |
-| $e = 255, m = 0$ | All zeros | **Infinity** ($\pm\infty$) |
-| $e = 255, m \neq 0$ | Non-zero | **NaN** (Not a Number) |
+| All zeros ($e = 0$) | All zeros ($m = 0$) | **Zero** ($\pm 0$) |
+| All zeros ($e = 0$) | Non-zero ($m \neq 0$) | **Denormalized** (very small numbers near zero) |
+| All ones ($e = 255$) | All zeros ($m = 0$) | **Infinity** ($\pm\infty$) |
+| All ones ($e = 255$) | Non-zero ($m \neq 0$) | **NaN** (Not a Number) |
 
 That NaN at the bottom of the table? That's what shows up in your loss. It comes from operations like:
 

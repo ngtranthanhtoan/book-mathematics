@@ -23,27 +23,26 @@ In both cases, you strip away what is specific (the data type, the particular lo
 ### How the Pieces Fit Together
 
 ```
-                    The Mathematical Thinking Toolkit
-    ┌─────────────────────────────────────────────────────────┐
-    │                    Complex Problem                       │
-    │                         │                                │
-    │    ┌────────┬──────────┼──────────┬───────────┐         │
-    │    ▼        ▼          ▼          ▼           ▼         │
-    │ Abstract  Generalize  Constrain  Reduce    Identify     │
-    │    │        │          │          │        Invariants    │
-    │    │        │          │          │           │          │
-    │    ▼        ▼          ▼          ▼           ▼         │
-    │ Remove   Find       Limit     Break into  Find what     │
-    │ noise    universal  solution   simpler     doesn't       │
-    │          patterns   space      problems    change        │
-    │    │        │          │          │           │          │
-    │    └────────┴──────────┴──────────┴───────────┘         │
-    │                         │                                │
-    │                      Solution                            │
-    └─────────────────────────────────────────────────────────┘
+                         The Mathematical Thinking Toolkit
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │                          Complex Problem                            │
+    │                               │                                     │
+    │  ┌─────────┬─────────┬───────┼───────┬─────────┬─────────┐        │
+    │  ▼         ▼         ▼       ▼       ▼         ▼         ▼        │
+    │ Abstract Generalize Prove  Constrain Check    Reduce   Identify   │
+    │  │         │         │       │       Dims      │       Invariants  │
+    │  ▼         ▼         ▼       ▼       ▼         ▼         ▼        │
+    │ Remove   Find      Reason  Limit   Verify   Break     Find what   │
+    │ noise    universal rigor-  solution units/   into      doesn't     │
+    │          patterns  ously   space    shapes   simpler   change      │
+    │  │         │         │       │       │       problems    │         │
+    │  └─────────┴─────────┴───────┴───────┴─────────┴─────────┘        │
+    │                               │                                     │
+    │                            Solution                                 │
+    └──────────────────────────────────────────────────────────────────────┘
 ```
 
-You use every one of these daily. Let's name them.
+You use every one of these daily -- seven tools, each with an engineering equivalent. Let's name them.
 
 ---
 
@@ -179,7 +178,7 @@ Your model memorizes the training set (under-generalization, high variance) or o
 
 ## 3. Proof Techniques -- Rigorous Reasoning
 
-You prove things in code all the time. Let's name the formal versions of what you already do.
+Abstraction and generalization let you see patterns. But how do you *know* they're correct? You prove things in code all the time -- assertions, loop invariants, test suites. Let's name the formal versions of what you already do.
 
 ### Proof by Induction
 
@@ -238,13 +237,43 @@ You prove things in code all the time. Let's name the formal versions of what yo
 
 **Direct proof**: Assume the hypothesis, apply logical steps, arrive at the conclusion.
 
+**Example**: Prove that generalizing from `sort_ints` to `sort<T, Comparator>` preserves correctness -- if the original sort is correct for integers, and our comparator satisfies the same ordering axioms, then the general sort is correct too. That's a direct proof: same algorithm + same axioms = same guarantees.
+
+> **You Already Know This**
+>
+> Every time you write a unit test that feeds input and checks output, you are constructing a direct proof: "Given precondition X, the code produces postcondition Y."
+>
+> ```python
+> def test_sort_preserves_length():
+>     """Direct proof: sorting preserves list length."""
+>     original = [3, 1, 4, 1, 5]
+>     sorted_list = sort(original, key=lambda x: x)
+>     assert len(sorted_list) == len(original)  # Direct: count in == count out
+> ```
+
 **Contrapositive**: To prove "if A then B", prove "if not B then not A" (logically equivalent).
 
-> **Engineering parallel**: "If the config is valid, the server starts" is equivalent to "If the server doesn't start, the config is invalid." You use contrapositives when debugging all the time: "The output is wrong, therefore one of the inputs must be wrong."
+> **You Already Know This**
+>
+> "If the config is valid, the server starts" is equivalent to "If the server doesn't start, the config is invalid." You use contrapositives when debugging all the time: "The output is wrong, therefore one of the inputs must be wrong."
+>
+> ```python
+> # Contrapositive debugging:
+> # Instead of proving "valid input → correct output" (hard to check exhaustively),
+> # you prove "incorrect output → invalid input" (one failing case suffices).
+> if model_accuracy < 0.5:
+>     # Contrapositive: if the model is bad, the training data must be bad
+>     # (assuming the architecture is known-good)
+>     investigate_data_quality()
+> ```
+
+**ML Application**: Convergence proofs in optimization often use contradiction ("assume the gradient never reaches zero, but the loss is bounded below -- contradiction"). Generalization bounds use direct proof ("if the training set is large enough, the test error is close to training error").
 
 ---
 
 ## 4. Constraints
+
+You can abstract, generalize, and prove. But an unconstrained problem is usually unsolvable -- "minimize any loss function" is meaningless without constraints on the model or the data. Constraints are what turn an open-ended question into a tractable one.
 
 **Definition**: Constraints are conditions that limit the possible values or behaviors of a system.
 
@@ -280,6 +309,8 @@ $$\text{Minimize } f(x) \text{ subject to } g(x) \leq 0$$
 ---
 
 ## 5. Dimensional Analysis
+
+Constraints tell you *what values are allowed*. Dimensional analysis is a specific, powerful constraint: it tells you *what combinations of quantities even make sense*. Back to our running example -- you can't add a loss value (a scalar) to a gradient (a vector). The "dimensions" don't match. Catching that mismatch before you run the code is dimensional analysis.
 
 **Definition**: Dimensional analysis is the study of relationships between physical quantities based on their units/dimensions.
 
@@ -322,6 +353,8 @@ $$\text{velocity} = \frac{\text{distance}}{\text{time}} \Rightarrow [v] = \frac{
 
 ## 6. Reduction
 
+So far you can abstract, generalize, prove, constrain, and dimension-check. But what if the problem is still too hard? You reduce it. Remember how "sorting any comparable type" was itself a reduction -- you reduced a family of sorting problems to a single generic algorithm? Reduction is that move, applied everywhere.
+
 **Definition**: Reduction transforms a complex problem into simpler subproblems or into a known solvable problem.
 
 **Types of reduction**:
@@ -353,6 +386,8 @@ $$\text{velocity} = \frac{\text{distance}}{\text{time}} \Rightarrow [v] = \frac{
 ---
 
 ## 7. Invariants
+
+You've been abstracting, constraining, reducing -- transforming problems in all kinds of ways. The final question: when you transform something, what *stays the same*? When you generalize `sort_ints` to `sort<T>`, the invariant is that the output is always in order. When you minimize any loss function, the invariant is that the gradient points downhill. Invariants are the anchors that let you trust your transformations.
 
 **Definition**: An invariant is a property that remains unchanged under a specific transformation.
 
@@ -397,18 +432,21 @@ Here are the traps that catch experienced engineers moving into ML:
 
 2. **Over-generalization**: Assuming patterns hold beyond their validity. Your model fits the training data beautifully -- so what? The test set is the only thing that matters.
 
-3. **Missing constraints**: Ignoring implicit constraints like positivity, probability summing to 1, or symmetry. These aren't optional -- they encode domain knowledge.
+3. **Sloppy proofs**: Skipping the base case in induction, or confusing the direction of implication. "A implies B" does not mean "B implies A." In ML, "low training loss implies convergence" does not mean "convergence implies low test loss."
 
-4. **Ignoring dimensions**: Leading to subtle bugs in numerical code. If your loss function suddenly produces a scalar when it should produce a vector, you have a broadcasting bug, not a feature.
+4. **Missing constraints**: Ignoring implicit constraints like positivity, probability summing to 1, or symmetry. These aren't optional -- they encode domain knowledge.
 
-5. **Incomplete reduction**: Not fully decomposing the problem. If your ML pipeline has 12 steps and step 7 is "magic happens here," you haven't finished reducing.
+5. **Ignoring dimensions**: Leading to subtle bugs in numerical code. If your loss function suddenly produces a scalar when it should produce a vector, you have a broadcasting bug, not a feature.
 
-6. **Assuming invariants**: Not all expected invariants actually hold. "Surely the data distribution doesn't change between training and deployment" -- it does. Always.
+6. **Incomplete reduction**: Not fully decomposing the problem. If your ML pipeline has 12 steps and step 7 is "magic happens here," you haven't finished reducing.
+
+7. **Assuming invariants**: Not all expected invariants actually hold. "Surely the data distribution doesn't change between training and deployment" -- it does. Always.
 
 ### Best Practices
 
 - Start concrete, then abstract once patterns emerge
 - Always test generalizations on held-out data
+- When proving something, check the base case first and be explicit about which direction the implication goes
 - Make constraints explicit in your code (assertions, type hints, schemas)
 - Document the dimensions/shapes of all tensors
 - When stuck, look for a reduction to a known problem
@@ -522,6 +560,58 @@ def generalization_demo():
     print("\nWarning: Generalization may fail outside observed range!")
     print("What if the true pattern is: f(x) = x^2 for x <= 10, else 0?")
     print("This is EXACTLY the overfitting problem in ML.")
+
+# ============================================
+# PROOF TECHNIQUES: Rigorous reasoning
+# ============================================
+
+def proof_demo():
+    """
+    Demonstrating proof techniques: induction, contradiction, and contrapositive.
+
+    Engineering parallels:
+    - Induction = reasoning about recursive functions
+    - Contradiction = proof by failing test
+    - Contrapositive = debugging by ruling out causes
+    """
+
+    # Proof by Induction: verify a recursive function
+    def power(base, exp):
+        """Compute base^exp recursively."""
+        if exp == 0:
+            return 1
+        return base * power(base, exp - 1)
+
+    print("Proof by Induction: power(base, exp)")
+    print("  Base case: power(b, 0) = 1 = b^0  ✓")
+    print("  Inductive step: power(b, k+1) = b * power(b, k) = b * b^k = b^(k+1)  ✓")
+    for exp in range(6):
+        assert power(3, exp) == 3**exp
+        print(f"  power(3, {exp}) = {power(3, exp)}")
+
+    # Proof by Contradiction: show sqrt(2) is irrational
+    print("\nProof by Contradiction: sqrt(2) is irrational")
+    print("  Assume sqrt(2) = p/q in lowest terms")
+    print("  Then p and q are both even → not in lowest terms → contradiction!")
+
+    # Contrapositive: debugging by elimination
+    print("\nContrapositive in debugging:")
+    print("  Claim: 'valid config → server starts'")
+    print("  Contrapositive: 'server didn't start → config is invalid'")
+
+    def diagnose(server_started, config_valid, network_up):
+        """Use contrapositive reasoning to find the bug."""
+        if not server_started:
+            if not config_valid:
+                return "Config invalid (contrapositive of: valid config → starts)"
+            if not network_up:
+                return "Network down (contrapositive of: network up → can bind port)"
+            return "Unknown cause -- investigate further"
+        return "Server running"
+
+    print(f"  Case 1: {diagnose(False, False, True)}")
+    print(f"  Case 2: {diagnose(False, True, False)}")
+    print(f"  Case 3: {diagnose(True, True, True)}")
 
 # ============================================
 # CONSTRAINTS: Limiting the solution space
@@ -781,6 +871,11 @@ if __name__ == "__main__":
     print("GENERALIZATION")
     print("=" * 60)
     generalization_demo()
+
+    print("\n" + "=" * 60)
+    print("PROOF TECHNIQUES")
+    print("=" * 60)
+    proof_demo()
 
     print("\n" + "=" * 60)
     print("CONSTRAINTS")
