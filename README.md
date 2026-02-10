@@ -231,6 +231,21 @@ You do not need to follow this thread to understand the book, but it gives you a
 |---------|-------|
 | 14.1 | [Advanced Topics Reference](14-level-14-advanced/01-advanced-topics-reference.md) |
 
+### Appendices -- Quick-reference material you will reach for repeatedly
+*Symbols, formulas, distributions, and code patterns from all 14 levels, collected into lookup-friendly tables. Keep them open in a second tab while you read.* (9 appendices)
+
+| Appendix | Topic |
+|----------|-------|
+| A | [Greek Alphabet & Pronunciation](15-appendices/A-greek-alphabet.md) |
+| B | [Notation Quick Reference](15-appendices/B-notation-reference.md) |
+| C | [Key Theorems & Identities](15-appendices/C-key-theorems-and-identities.md) |
+| D | [Probability Distributions](15-appendices/D-probability-distributions.md) |
+| E | [Matrix Cookbook](15-appendices/E-matrix-cookbook.md) |
+| F | [Calculus Reference](15-appendices/F-calculus-reference.md) |
+| G | [NumPy / SciPy / PyTorch Cheat Sheet](15-appendices/G-numpy-scipy-pytorch-cheatsheet.md) |
+| H | [Glossary](15-appendices/H-glossary.md) |
+| I | [Recommended Reading](15-appendices/I-recommended-reading.md) |
+
 ---
 
 ## Learning Path
@@ -314,108 +329,9 @@ You do **not** need prior university-level math. That is the whole point.
 
 ---
 
-## Appendix: Recommended Reading
+## Recommended Reading
 
-These are the books and resources that complement this one. They are organized by topic so you can dive deeper into whatever grabs you.
-
-### Foundational Mathematics
-
-| Book | Author | Best For |
-|------|--------|----------|
-| *How to Solve It* | George Polya | Mathematical thinking and problem-solving |
-| *Book of Proof* | Richard Hammack | Logic, sets, and proof techniques (free online) |
-| *Mathematics for Computer Science* | Lehman, Leighton, Meyer | Discrete math for programmers (MIT OpenCourseWare) |
-
-### Linear Algebra
-
-| Book | Author | Best For |
-|------|--------|----------|
-| *Linear Algebra Done Right* | Sheldon Axler | Conceptual understanding, theory-focused |
-| *Introduction to Linear Algebra* | Gilbert Strang | Practical, computational approach |
-| *Coding the Matrix* | Philip Klein | Linear algebra through Python programming |
-| *Linear Algebra and Its Applications* | David Lay | Standard undergraduate text |
-
-### Calculus
-
-| Book | Author | Best For |
-|------|--------|----------|
-| *Calculus* | Michael Spivak | Rigorous foundations |
-| *Calculus Made Easy* | Silvanus Thompson | Intuitive, beginner-friendly |
-| *Active Calculus* | Matt Boelkins | Free, activity-based learning |
-
-### Probability & Statistics
-
-| Book | Author | Best For |
-|------|--------|----------|
-| *Introduction to Probability* | Blitzstein & Hwang | Intuitive probability (Harvard course) |
-| *Think Stats* | Allen Downey | Statistics for programmers (free online) |
-| *All of Statistics* | Larry Wasserman | Concise graduate-level reference |
-| *Statistical Inference* | Casella & Berger | Rigorous statistical theory |
-
-### Machine Learning Mathematics
-
-| Book | Author | Best For |
-|------|--------|----------|
-| *Mathematics for Machine Learning* | Deisenroth, Faisal, Ong | **Best overall ML math book** (free PDF) |
-| *The Matrix Calculus You Need for Deep Learning* | Parr & Howard | Derivatives and gradients for neural networks (free) |
-| *Deep Learning* | Goodfellow, Bengio, Courville | Math foundations in Part I (free online) |
-| *Pattern Recognition and Machine Learning* | Christopher Bishop | Probabilistic ML, Bayesian methods |
-
-### Optimization
-
-| Book | Author | Best For |
-|------|--------|----------|
-| *Convex Optimization* | Boyd & Vandenberghe | Definitive optimization text (free PDF) |
-| *Numerical Optimization* | Nocedal & Wright | Practical optimization algorithms |
-
-### Information Theory
-
-| Book | Author | Best For |
-|------|--------|----------|
-| *Elements of Information Theory* | Cover & Thomas | Standard reference |
-| *Information Theory, Inference, and Learning Algorithms* | David MacKay | ML perspective (free online) |
-
-### Advanced Topics
-
-| Book | Author | Best For |
-|------|--------|----------|
-| *Analysis I & II* | Terence Tao | Rigorous real analysis |
-| *Topology* | James Munkres | Foundational topology |
-| *Stochastic Processes* | Sheldon Ross | Random processes for ML |
-
----
-
-### Free Online Resources
-
-| Resource | URL | Topics |
-|----------|-----|--------|
-| 3Blue1Brown | youtube.com/3blue1brown | Visual math intuition |
-| Khan Academy | khanacademy.org | All foundational topics |
-| MIT OpenCourseWare | ocw.mit.edu | University-level courses |
-| Paul's Online Math Notes | tutorial.math.lamar.edu | Calculus reference |
-| Seeing Theory | seeing-theory.brown.edu | Interactive probability |
-
----
-
-### Suggested Learning Paths (External Resources)
-
-These are paths through the *recommended reading* above, not through this book.
-
-**Minimal ML Path** (fastest route):
-1. *Mathematics for Machine Learning* (Deisenroth) -- covers essentials
-2. *Deep Learning* Part I (Goodfellow) -- fills gaps
-
-**Rigorous Path** (deep understanding):
-1. *Book of Proof* (Hammack) -- foundations
-2. *Linear Algebra Done Right* (Axler) -- theory
-3. *Introduction to Probability* (Blitzstein) -- probability
-4. *Convex Optimization* (Boyd) -- optimization
-5. *Pattern Recognition and Machine Learning* (Bishop) -- synthesis
-
-**Programmer's Path** (code-first):
-1. *Coding the Matrix* (Klein) -- linear algebra
-2. *Think Stats* (Downey) -- statistics
-3. *Mathematics for Machine Learning* (Deisenroth) -- ML math
+See [Appendix I: Recommended Reading](15-appendices/I-recommended-reading.md) for annotated bibliography, free online resources, and suggested learning paths through external materials.
 
 ---
 
